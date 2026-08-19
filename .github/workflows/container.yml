@@ -60,6 +60,9 @@ jobs:
           pull: true
           tags: unraid-mcp:scan
 
+      - name: Smoke test container health
+        run: bash test/container-smoke.sh unraid-mcp:scan
+
       - name: Scan fixable critical and high vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -139,6 +142,9 @@ jobs:
           platforms: linux/amd64
           pull: true
           tags: unraid-mcp:scan
+
+      - name: Smoke test container health
+        run: bash test/container-smoke.sh unraid-mcp:scan
 
       - name: Scan fixable critical and high vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
