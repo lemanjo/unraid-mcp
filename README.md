@@ -64,13 +64,15 @@ node /absolute/path/to/unraid-mcp/dist/index.js
 Versioned release images are published to [Docker Hub](https://hub.docker.com/r/lemanjo/unraid-mcp) for `linux/amd64` and `linux/arm64`. Pin a version or image digest for deployments rather than relying on the mutable `latest` tag:
 
 ```bash
-docker pull lemanjo/unraid-mcp:0.1.0
+docker pull lemanjo/unraid-mcp:0.1.1
 ```
+
+The final image uses a digest-pinned Distroless Node.js runtime. It runs without a shell, package manager, npm, or other build tooling and as a numeric non-root user. Container builds are scanned with Trivy and fail before registry login when a fixable critical or high vulnerability is present.
 
 Build the production image on your Unraid server or another Docker host:
 
 ```bash
-docker build --tag unraid-mcp:0.1.0 .
+docker build --tag unraid-mcp:0.1.1 .
 ```
 
 ### Local stdio container
@@ -84,7 +86,7 @@ export UNRAID_API_KEY="your-api-key"
 docker run --rm -i \
   --env UNRAID_URL \
   --env UNRAID_API_KEY \
-  unraid-mcp:0.1.0
+  unraid-mcp:0.1.1
 ```
 
 Forward any optional configuration the same way, for example `--env UNRAID_ALLOW_MUTATIONS`. For a custom CA file, mount it read-only and configure its container path:
@@ -95,7 +97,7 @@ docker run --rm -i \
   --env UNRAID_API_KEY \
   --env UNRAID_CA_CERT_PATH=/certs/unraid-ca.pem \
   --volume /host/path/unraid-ca.pem:/certs/unraid-ca.pem:ro \
-  unraid-mcp:0.1.0
+  unraid-mcp:0.1.1
 ```
 
 In stdio mode the image does not listen on a port. The AI host launches it with `docker run --rm -i` and owns its lifetime.
@@ -127,7 +129,7 @@ docker run -d \
   --env MCP_AUTH_TOKEN \
   --env UNRAID_URL \
   --env UNRAID_API_KEY \
-  unraid-mcp:0.1.0
+  unraid-mcp:0.1.1
 ```
 
 `MCP_ALLOWED_HOSTS` is mandatory when binding an IPv4 or IPv6 wildcard address. List every hostname or IP address clients or a reverse proxy will place in the HTTP `Host` header. Entries do not include ports, and IPv6 entries use brackets. Localhost values are always included for health checks.
@@ -163,7 +165,7 @@ An OpenCode configuration that launches the image through a Docker daemon is:
         "UNRAID_URL",
         "--env",
         "UNRAID_API_KEY",
-        "unraid-mcp:0.1.0"
+        "unraid-mcp:0.1.1"
       ],
       "enabled": true,
       "environment": {
@@ -290,7 +292,7 @@ To launch the container image instead, use:
         "UNRAID_URL",
         "--env",
         "UNRAID_API_KEY",
-        "unraid-mcp:0.1.0"
+        "unraid-mcp:0.1.1"
       ],
       "env": {
         "UNRAID_URL": "${UNRAID_URL}",
@@ -350,7 +352,7 @@ args = [
   "UNRAID_URL",
   "--env",
   "UNRAID_API_KEY",
-  "unraid-mcp:0.1.0",
+  "unraid-mcp:0.1.1",
 ]
 env_vars = ["UNRAID_URL", "UNRAID_API_KEY"]
 startup_timeout_sec = 10
@@ -461,7 +463,7 @@ Tests use local mock HTTP servers plus in-memory and Streamable HTTP MCP clients
 
 ### Container releases
 
-GitHub Actions builds the container for pull requests and changes to `main` without using registry credentials. Publishing occurs only when a semantic-versioned GitHub Release such as `v0.1.0` is published. The release workflow uses the protected `dockerhub` environment and its `DOCKERHUB_TOKEN` secret, then publishes version, commit, and (for stable releases) `latest` tags with SBOM and provenance attestations.
+GitHub Actions builds and vulnerability-scans the container for pull requests and changes to `main` without using registry credentials. Publishing occurs only when a semantic-versioned GitHub Release such as `v0.1.1` is published. The release workflow scans the built image before accessing the protected `dockerhub` environment's `DOCKERHUB_TOKEN`, then publishes version, commit, and (for stable releases) `latest` tags with SBOM and provenance attestations.
 
 ## Security Notes
 
