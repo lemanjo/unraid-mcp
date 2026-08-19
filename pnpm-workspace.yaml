@@ -1,0 +1,14 @@
+allowBuilds:
+  esbuild: true
+blockExoticSubdeps: true
+frozenLockfile: true
+minimumReleaseAge: 10080
+minimumReleaseAgeIgnoreMissingTime: false
+minimumReleaseAgeStrict: true
+savePrefix: ''
+strictStorePkgContentCheck: true
+trustLockfile: false
+trustPolicy: no-downgrade
+trustPolicyExclude:
+  - undici-types@6.21.0
+verifyStoreIntegrity: true

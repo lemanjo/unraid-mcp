@@ -1,0 +1,88 @@
+# Dependencies and package-manager state
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+
+# Build, test, and package output
+dist/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+*.tgz
+*.log
+
+# Environment files and local overrides
+.env
+.env.*
+.envrc
+!.env.example
+*.local
+*.local.json
+*.local.yaml
+*.local.yml
+
+# Secrets and credential files
+secrets/
+.secrets/
+credentials/
+.credentials/
+*.secret
+*.secrets
+*credentials*.json
+*secrets*.json
+*secret*.json
+*secret*.yaml
+*secret*.yml
+auth.json
+.npmrc
+.pypirc
+.netrc
+
+# Private keys, certificates, and encrypted key stores
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+*.crt
+*.cer
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# Local AI and MCP client configuration may contain expanded secrets
+.mcp.json
+.claude/
+.codex/
+.opencode/
+opencode.json
+opencode.jsonc
+
+# Cloud, infrastructure, and container credentials
+.aws/
+.azure/
+.config/gcloud/
+.docker/config.json
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+docker-compose.override.yml
+docker-compose.override.yaml
+compose.override.yml
+compose.override.yaml
+
+# Editor, OS, and temporary files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
