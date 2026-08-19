@@ -61,6 +61,12 @@ node /absolute/path/to/unraid-mcp/dist/index.js
 
 ## Container Image
 
+Versioned release images are published to [Docker Hub](https://hub.docker.com/r/lemanjo/unraid-mcp) for `linux/amd64` and `linux/arm64`. Pin a version or image digest for deployments rather than relying on the mutable `latest` tag:
+
+```bash
+docker pull lemanjo/unraid-mcp:0.1.0
+```
+
 Build the production image on your Unraid server or another Docker host:
 
 ```bash
@@ -452,6 +458,10 @@ pnpm verify
 ```
 
 Tests use local mock HTTP servers plus in-memory and Streamable HTTP MCP clients. They do not require Docker or a live Unraid server.
+
+### Container releases
+
+GitHub Actions builds the container for pull requests and changes to `main` without using registry credentials. Publishing occurs only when a semantic-versioned GitHub Release such as `v0.1.0` is published. The release workflow uses the protected `dockerhub` environment and its `DOCKERHUB_TOKEN` secret, then publishes version, commit, and (for stable releases) `latest` tags with SBOM and provenance attestations.
 
 ## Security Notes
 
