@@ -1,6 +1,6 @@
 {
   "name": "unraid-mcp",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "A security-conscious MCP server for managing Unraid through its official GraphQL API",
   "type": "module",
   "bin": {
