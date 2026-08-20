@@ -18,6 +18,26 @@ export const SYSTEM_INFO_QUERY = /* GraphQL */ `
       memory {
         layout { size type clockSpeed manufacturer formFactor }
       }
+    }
+  }
+`;
+
+export const SYSTEM_INFO_COMPAT_QUERY = /* GraphQL */ `
+  query McpSystemInfoCompat {
+    info {
+      time
+      versions { unraid kernel docker }
+      os { platform distro release kernel arch hostname uptime }
+      system { manufacturer model version }
+      cpu { manufacturer brand speed cores threads processors }
+      memory { layout { size type clockSpeed manufacturer formFactor } }
+    }
+  }
+`;
+
+export const SYSTEM_NETWORK_QUERY = /* GraphQL */ `
+  query McpSystemNetwork {
+    info {
       networkInterfaces {
         name description macAddress speed duplex operstate type
         ipv4Addresses { address netmask }
@@ -27,6 +47,21 @@ export const SYSTEM_INFO_QUERY = /* GraphQL */ `
         name description macAddress speed duplex operstate type
         ipv4Addresses { address netmask }
         ipv6Addresses { address prefixLength }
+      }
+    }
+  }
+`;
+
+export const SYSTEM_NETWORK_COMPAT_QUERY = /* GraphQL */ `
+  query McpSystemNetworkCompat {
+    info {
+      networkInterfaces {
+        name description macAddress status protocol ipAddress netmask gateway
+        useDhcp ipv6Address ipv6Netmask ipv6Gateway useDhcp6
+      }
+      primaryNetwork {
+        name description macAddress status protocol ipAddress netmask gateway
+        useDhcp ipv6Address ipv6Netmask ipv6Gateway useDhcp6
       }
     }
   }
@@ -43,11 +78,25 @@ export const METRICS_QUERY = /* GraphQL */ `
         total used free available buffcache percentTotal
         swapTotal swapUsed swapFree percentSwapTotal
       }
+    }
+  }
+`;
+
+export const NETWORK_METRICS_QUERY = /* GraphQL */ `
+  query McpNetworkMetrics {
+    metrics {
       network {
         name operstate bytesReceived bytesSent packetsReceived packetsSent
         receiveErrors transmitErrors receiveDropped transmitDropped
         rxSec txSec utilizationPercent lastUpdated
       }
+    }
+  }
+`;
+
+export const TEMPERATURE_METRICS_QUERY = /* GraphQL */ `
+  query McpTemperatureMetrics {
+    metrics {
       temperature {
         sensors {
           id name type location warning critical
@@ -91,10 +140,33 @@ export const ARRAY_QUERY = /* GraphQL */ `
   }
 `;
 
+const ARRAY_DISK_COMPAT_FIELDS = /* GraphQL */ `
+  id idx name device size status rotational temp numReads numWrites numErrors
+  fsSize fsFree fsUsed exportable type warning critical fsType comment format
+  transport color
+`;
+
+export const ARRAY_COMPAT_QUERY = /* GraphQL */ `
+  query McpArrayCompat {
+    array {
+      id state
+      capacity {
+        kilobytes { free used total }
+        disks { free used total }
+      }
+      parityCheckStatus { ${PARITY_FIELDS} }
+      boot { ${ARRAY_DISK_COMPAT_FIELDS} }
+      parities { ${ARRAY_DISK_COMPAT_FIELDS} }
+      disks { ${ARRAY_DISK_COMPAT_FIELDS} }
+      caches { ${ARRAY_DISK_COMPAT_FIELDS} }
+    }
+  }
+`;
+
 export const DISKS_QUERY = /* GraphQL */ `
   query McpDisks {
     disks {
-      id device type name vendor size bytesPerSector firmwareRevision serialNum
+      id device type name vendor size firmwareRevision serialNum
       interfaceType smartStatus temperature isSpinning
       partitions { name fsType size }
     }
@@ -103,6 +175,13 @@ export const DISKS_QUERY = /* GraphQL */ `
       smartStatus temperature isSpinning
       partitions { name fsType size }
     }
+  }
+`;
+
+export const DISK_SECTOR_SIZES_QUERY = /* GraphQL */ `
+  query McpDiskSectorSizes {
+    disks { id bytesPerSector }
+    assignableDisks { id bytesPerSector }
   }
 `;
 
@@ -153,13 +232,28 @@ export const VMS_QUERY = /* GraphQL */ `
   }
 `;
 
-export const UPS_QUERY = /* GraphQL */ `
-  query McpUps {
+export const UPS_DEVICES_QUERY = /* GraphQL */ `
+  query McpUpsDevices {
     upsDevices {
       id name model status
       battery { chargeLevel estimatedRuntime health }
       power { inputVoltage outputVoltage loadPercentage nominalPower currentPower }
     }
+  }
+`;
+
+export const UPS_DEVICES_COMPAT_QUERY = /* GraphQL */ `
+  query McpUpsDevicesCompat {
+    upsDevices {
+      id name model status
+      battery { chargeLevel estimatedRuntime health }
+      power { inputVoltage outputVoltage loadPercentage }
+    }
+  }
+`;
+
+export const UPS_CONFIGURATION_QUERY = /* GraphQL */ `
+  query McpUpsConfiguration {
     upsConfiguration {
       service upsCable customUpsCable upsType device overrideUpsCapacity
       batteryLevel minutes timeout killUps nisIp netServer upsName modelName

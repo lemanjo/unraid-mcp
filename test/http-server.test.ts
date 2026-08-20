@@ -6,6 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig, type AppConfig } from "../src/config.js";
 import { startHttpServer, type HttpServerHandle } from "../src/http-server.js";
 import { createServer } from "../src/server.js";
+import {
+  UNRAID_API_V4_37_1_OPERATIONS,
+  UNRAID_API_V4_37_1_SUBSCRIPTIONS,
+} from "../src/api-v4.js";
 
 const TOKEN = "test-mcp-auth-token-that-is-longer-than-32-bytes";
 const handles: HttpServerHandle[] = [];
@@ -225,7 +229,13 @@ describe("HTTP transport", () => {
     const tools = await client.listTools();
     const result = await client.callTool({ name: "unraid_get_system_info" });
 
-    expect(tools.tools).toHaveLength(12);
+    expect(tools.tools).toHaveLength(
+      12 +
+        UNRAID_API_V4_37_1_OPERATIONS.filter(
+          (operation) => operation.kind === "query" && !operation.requiresConfirmation,
+        ).length +
+        UNRAID_API_V4_37_1_SUBSCRIPTIONS.length,
+    );
     expect(result.structuredContent).toEqual({ info: { os: { hostname: "tower" } } });
   });
 });

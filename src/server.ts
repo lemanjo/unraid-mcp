@@ -1,37 +1,23 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 
+import { registerApiV4Tools } from "./api-v4-tools.js";
 import type { UnraidConfig } from "./config.js";
 import {
-  ARRAY_QUERY,
   ARRAY_STATE_MUTATION,
-  DISKS_QUERY,
-  DOCKER_CONTAINERS_QUERY,
   DOCKER_CONTROL_MUTATIONS,
-  DOCKER_LOGS_QUERY,
-  METRICS_QUERY,
   NOTIFICATION_MUTATIONS,
-  NOTIFICATIONS_QUERY,
   PARITY_MUTATIONS,
   REMOVE_DOCKER_CONTAINER_MUTATION,
-  SHARES_QUERY,
-  SYSTEM_INFO_QUERY,
-  SYSTEM_LOG_QUERY,
-  SYSTEM_LOGS_QUERY,
-  UPS_QUERY,
   VM_CONTROL_MUTATIONS,
   VM_DESTRUCTIVE_MUTATIONS,
-  VMS_QUERY,
 } from "./queries.js";
+import {
+  type GraphQLExecutor,
+  type UnraidReadFacade,
+  VersionAwareUnraidReadFacade,
+} from "./read-facade.js";
 import { UnraidApiError, UnraidClient } from "./unraid-client.js";
-
-interface GraphQLExecutor {
-  execute(
-    query: string,
-    variables?: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<Record<string, unknown>>;
-}
 
 const readAnnotations = {
   readOnlyHint: true,
@@ -74,7 +60,7 @@ async function runTool(operation: () => Promise<Record<string, unknown>>) {
   }
 }
 
-function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
+function registerReadTools(server: McpServer, client: UnraidReadFacade): void {
   server.registerTool(
     "unraid_get_system_info",
     {
@@ -83,7 +69,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
         "Get Unraid/API versions, host OS, hardware summary, memory modules, and network interfaces.",
       annotations: readAnnotations,
     },
-    (context) => runTool(() => client.execute(SYSTEM_INFO_QUERY, {}, context.mcpReq.signal)),
+    (context) => runTool(() => client.getSystemInfo(context.mcpReq.signal)),
   );
 
   server.registerTool(
@@ -94,7 +80,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
         "Get current CPU, memory, network, swap, and temperature metrics from Unraid.",
       annotations: readAnnotations,
     },
-    (context) => runTool(() => client.execute(METRICS_QUERY, {}, context.mcpReq.signal)),
+    (context) => runTool(() => client.getMetrics(context.mcpReq.signal)),
   );
 
   server.registerTool(
@@ -105,7 +91,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
         "Get array state, capacity, parity status, and boot, parity, data, and cache disks.",
       annotations: readAnnotations,
     },
-    (context) => runTool(() => client.execute(ARRAY_QUERY, {}, context.mcpReq.signal)),
+    (context) => runTool(() => client.getArray(context.mcpReq.signal)),
   );
 
   server.registerTool(
@@ -116,7 +102,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
         "List detected and assignable physical disks with identity, SMART summary, temperature, and partitions.",
       annotations: readAnnotations,
     },
-    (context) => runTool(() => client.execute(DISKS_QUERY, {}, context.mcpReq.signal)),
+    (context) => runTool(() => client.listDisks(context.mcpReq.signal)),
   );
 
   server.registerTool(
@@ -126,7 +112,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
       description: "List user shares, capacity, allocation, cache, disk inclusion, and LUKS status.",
       annotations: readAnnotations,
     },
-    (context) => runTool(() => client.execute(SHARES_QUERY, {}, context.mcpReq.signal)),
+    (context) => runTool(() => client.listShares(context.mcpReq.signal)),
   );
 
   server.registerTool(
@@ -137,8 +123,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
         "List Docker container state, image, ports, autostart, resource sizes, and port conflicts.",
       annotations: readAnnotations,
     },
-    (context) =>
-      runTool(() => client.execute(DOCKER_CONTAINERS_QUERY, {}, context.mcpReq.signal)),
+    (context) => runTool(() => client.listDockerContainers(context.mcpReq.signal)),
   );
 
   server.registerTool(
@@ -160,7 +145,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
     },
     ({ id, tail, since }, context) =>
       runTool(() =>
-        client.execute(DOCKER_LOGS_QUERY, { id, tail, since }, context.mcpReq.signal),
+        client.getDockerLogs({ id, tail, since }, context.mcpReq.signal),
       ),
   );
 
@@ -171,7 +156,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
       description: "List Unraid VM IDs, names, and lifecycle states.",
       annotations: readAnnotations,
     },
-    (context) => runTool(() => client.execute(VMS_QUERY, {}, context.mcpReq.signal)),
+    (context) => runTool(() => client.listVms(context.mcpReq.signal)),
   );
 
   server.registerTool(
@@ -182,7 +167,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
         "Get connected UPS status, battery, load, voltage, runtime, power, and UPS configuration.",
       annotations: readAnnotations,
     },
-    (context) => runTool(() => client.execute(UPS_QUERY, {}, context.mcpReq.signal)),
+    (context) => runTool(() => client.getUps(context.mcpReq.signal)),
   );
 
   server.registerTool(
@@ -201,7 +186,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
     },
     ({ type, importance, offset, limit }, context) =>
       runTool(() =>
-        client.execute(NOTIFICATIONS_QUERY, {
+        client.listNotifications({
           filter: { type, importance, offset, limit },
         }, context.mcpReq.signal),
       ),
@@ -214,7 +199,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
       description: "List system log files available through the Unraid API.",
       annotations: readAnnotations,
     },
-    (context) => runTool(() => client.execute(SYSTEM_LOGS_QUERY, {}, context.mcpReq.signal)),
+    (context) => runTool(() => client.listSystemLogs(context.mcpReq.signal)),
   );
 
   server.registerTool(
@@ -232,7 +217,7 @@ function registerReadTools(server: McpServer, client: GraphQLExecutor): void {
     },
     ({ path, lines, startLine }, context) =>
       runTool(() =>
-        client.execute(SYSTEM_LOG_QUERY, { path, lines, startLine }, context.mcpReq.signal),
+        client.readSystemLog({ path, lines, startLine }, context.mcpReq.signal),
       ),
   );
 }
@@ -247,17 +232,35 @@ function registerMutationTools(
     {
       title: "Start or stop the Unraid array",
       description: "Set the Unraid array state. Stopping the array interrupts storage services.",
-      inputSchema: z.object({ action: z.enum(["START", "STOP"]) }),
+      inputSchema: z.object({
+        action: z.enum(["START", "STOP"]),
+        confirmation: z.literal("STOP_ARRAY").optional(),
+      }),
       annotations: mutationAnnotations,
     },
-    ({ action }, context) =>
-      runTool(() =>
+    ({ action, confirmation }, context) => {
+      if (
+        action === "STOP" &&
+        (!config.allowDestructiveMutations || confirmation !== "STOP_ARRAY")
+      ) {
+        return Promise.resolve({
+          content: [
+            {
+              type: "text" as const,
+              text: "Stopping the array requires UNRAID_ALLOW_DESTRUCTIVE_MUTATIONS=true and confirmation=STOP_ARRAY.",
+            },
+          ],
+          isError: true,
+        });
+      }
+      return runTool(() =>
         client.execute(
           ARRAY_STATE_MUTATION,
           { input: { desiredState: action } },
           context.mcpReq.signal,
         ),
-      ),
+      );
+    },
   );
 
   server.registerTool(
@@ -272,16 +275,37 @@ function registerMutationTools(
           .boolean()
           .default(false)
           .describe("For START only: write corrections when parity errors are found"),
+        confirmation: z
+          .enum(["WRITE_PARITY_CORRECTIONS", "CANCEL_PARITY_CHECK"])
+          .optional(),
       }),
       annotations: mutationAnnotations,
     },
-    ({ action, correct }, context) => {
-      if (action === "START" && correct && !config.allowDestructiveMutations) {
+    ({ action, correct, confirmation }, context) => {
+      if (
+        action === "START" &&
+        correct &&
+        (!config.allowDestructiveMutations || confirmation !== "WRITE_PARITY_CORRECTIONS")
+      ) {
         return Promise.resolve({
           content: [
             {
               type: "text" as const,
-              text: "Parity correction requires UNRAID_ALLOW_DESTRUCTIVE_MUTATIONS=true.",
+              text: "Parity correction requires UNRAID_ALLOW_DESTRUCTIVE_MUTATIONS=true and confirmation=WRITE_PARITY_CORRECTIONS.",
+            },
+          ],
+          isError: true,
+        });
+      }
+      if (
+        action === "CANCEL" &&
+        (!config.allowDestructiveMutations || confirmation !== "CANCEL_PARITY_CHECK")
+      ) {
+        return Promise.resolve({
+          content: [
+            {
+              type: "text" as const,
+              text: "Cancelling a parity check requires UNRAID_ALLOW_DESTRUCTIVE_MUTATIONS=true and confirmation=CANCEL_PARITY_CHECK.",
             },
           ],
           isError: true,
@@ -302,13 +326,29 @@ function registerMutationTools(
       inputSchema: z.object({
         id: idSchema.describe("Container ID returned by unraid_list_docker_containers"),
         action: z.enum(["START", "STOP", "PAUSE", "UNPAUSE", "UPDATE"]),
+        confirmation: z.literal("UPDATE_DOCKER_CONTAINER").optional(),
       }),
       annotations: mutationAnnotations,
     },
-    ({ id, action }, context) =>
-      runTool(() =>
+    ({ id, action, confirmation }, context) => {
+      if (
+        action === "UPDATE" &&
+        (!config.allowDestructiveMutations || confirmation !== "UPDATE_DOCKER_CONTAINER")
+      ) {
+        return Promise.resolve({
+          content: [
+            {
+              type: "text" as const,
+              text: "Updating a container image requires UNRAID_ALLOW_DESTRUCTIVE_MUTATIONS=true and confirmation=UPDATE_DOCKER_CONTAINER.",
+            },
+          ],
+          isError: true,
+        });
+      }
+      return runTool(() =>
         client.execute(DOCKER_CONTROL_MUTATIONS[action], { id }, context.mcpReq.signal),
-      ),
+      );
+    },
   );
 
   server.registerTool(
@@ -360,6 +400,7 @@ function registerDestructiveTools(server: McpServer, client: GraphQLExecutor): v
       inputSchema: z.object({
         id: idSchema.describe("Container ID returned by unraid_list_docker_containers"),
         withImage: z.boolean().default(false),
+        confirmation: z.literal("REMOVE_DOCKER_CONTAINER"),
       }),
       annotations: mutationAnnotations,
     },
@@ -382,6 +423,7 @@ function registerDestructiveTools(server: McpServer, client: GraphQLExecutor): v
       inputSchema: z.object({
         id: idSchema.describe("VM ID returned by unraid_list_vms"),
         action: z.enum(["FORCE_STOP", "RESET"]),
+        confirmation: z.literal("FORCE_VM_ACTION"),
       }),
       annotations: mutationAnnotations,
     },
@@ -398,12 +440,16 @@ export function createServer(
 ): McpServer {
   const server = new McpServer({
     name: "unraid-mcp",
-    version: "0.1.0",
+    version: "0.2.0",
   });
+  const readFacade = new VersionAwareUnraidReadFacade(client);
 
-  registerReadTools(server, client);
+  registerReadTools(server, readFacade);
   if (config.allowMutations) registerMutationTools(server, client, config);
-  if (config.allowDestructiveMutations) registerDestructiveTools(server, client);
+  if (config.allowMutations && config.allowDestructiveMutations) {
+    registerDestructiveTools(server, client);
+  }
+  registerApiV4Tools(server, client, readFacade, config);
 
   return server;
 }

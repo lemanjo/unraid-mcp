@@ -1,6 +1,6 @@
 {
   "name": "unraid-mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A security-conscious MCP server for managing Unraid through its official GraphQL API",
   "type": "module",
   "bin": {
@@ -28,11 +28,14 @@
   "dependencies": {
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
+    "ws": "8.21.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "22.20.1",
+    "@types/ws": "8.18.1",
+    "graphql": "16.11.0",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
   }

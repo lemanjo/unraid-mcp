@@ -4,7 +4,7 @@ A local [Model Context Protocol](https://modelcontextprotocol.io/) server that l
 
 > **AI-assisted development disclosure:** This project was designed, researched, implemented, documented, and tested with substantial assistance from AI coding agents. It is not an official Unraid project. Review the source, permissions, and security settings yourself before granting it access to an Unraid server, especially before enabling mutation tools.
 
-The MCP is read-only by default. Mutating tools are omitted entirely until explicitly enabled through environment variables, and permanent/high-risk actions use a second gate.
+The MCP is read-only by default. Mutating tools are omitted entirely until explicitly enabled through environment variables, and permanent, credential, security, and other high-risk actions use a second gate plus an explicit per-call confirmation.
 
 ## Requirements
 
@@ -13,7 +13,7 @@ The MCP is read-only by default. Mutating tools are omitted entirely until expli
 - Unraid 7.2 or later, where the API is built into the OS
 - An Unraid API key
 
-Unraid 7.0-7.1 can expose API v4 through the Unraid Connect plugin, but Unraid documents that combination as limited support. The GraphQL documents in this project target API v4.35.1, bundled with Unraid 7.3.2. Older API releases may reject newer queries such as metrics, logs, or UPS fields.
+Unraid 7.0-7.1 can expose API v4 through the Unraid Connect plugin, but Unraid documents that combination as limited support. The stable monitoring tools use version-aware fixed-document fallbacks for older API v4 releases. The complete extended tool catalog targets API v4.37.1 and rejects calls clearly when the server cannot confirm that version.
 
 ## Unraid Setup
 
@@ -64,7 +64,7 @@ node /absolute/path/to/unraid-mcp/dist/index.js
 Versioned release images are published to [Docker Hub](https://hub.docker.com/r/lemanjo/unraid-mcp) for `linux/amd64` and `linux/arm64`. Pin a version or image digest for deployments rather than relying on the mutable `latest` tag:
 
 ```bash
-docker pull lemanjo/unraid-mcp:0.1.1
+docker pull lemanjo/unraid-mcp:0.2.0
 ```
 
 The final image uses a digest-pinned Distroless Node.js runtime. It runs without a shell, package manager, npm, or other build tooling and as a numeric non-root user. Container builds are scanned with Trivy and fail before registry login when a fixable critical or high vulnerability is present.
@@ -72,7 +72,7 @@ The final image uses a digest-pinned Distroless Node.js runtime. It runs without
 Build the production image on your Unraid server or another Docker host:
 
 ```bash
-docker build --tag unraid-mcp:0.1.1 .
+docker build --tag unraid-mcp:0.2.0 .
 ```
 
 ### Local stdio container
@@ -86,7 +86,7 @@ export UNRAID_API_KEY="your-api-key"
 docker run --rm -i \
   --env UNRAID_URL \
   --env UNRAID_API_KEY \
-  unraid-mcp:0.1.1
+  unraid-mcp:0.2.0
 ```
 
 Forward any optional configuration the same way, for example `--env UNRAID_ALLOW_MUTATIONS`. For a custom CA file, mount it read-only and configure its container path:
@@ -97,7 +97,7 @@ docker run --rm -i \
   --env UNRAID_API_KEY \
   --env UNRAID_CA_CERT_PATH=/certs/unraid-ca.pem \
   --volume /host/path/unraid-ca.pem:/certs/unraid-ca.pem:ro \
-  unraid-mcp:0.1.1
+  unraid-mcp:0.2.0
 ```
 
 In stdio mode the image does not listen on a port. The AI host launches it with `docker run --rm -i` and owns its lifetime.
@@ -129,7 +129,7 @@ docker run -d \
   --env MCP_AUTH_TOKEN \
   --env UNRAID_URL \
   --env UNRAID_API_KEY \
-  unraid-mcp:0.1.1
+  unraid-mcp:0.2.0
 ```
 
 `MCP_ALLOWED_HOSTS` is mandatory when binding an IPv4 or IPv6 wildcard address. List every hostname or IP address clients or a reverse proxy will place in the HTTP `Host` header. Entries do not include ports, and IPv6 entries use brackets. Localhost values are always included for health checks.
@@ -165,7 +165,7 @@ An OpenCode configuration that launches the image through a Docker daemon is:
         "UNRAID_URL",
         "--env",
         "UNRAID_API_KEY",
-        "unraid-mcp:0.1.1"
+        "unraid-mcp:0.2.0"
       ],
       "enabled": true,
       "environment": {
@@ -188,8 +188,8 @@ The Docker daemon used by the AI host must have access to the image. Restart Ope
 | `UNRAID_CA_CERT` | No | | PEM CA certificate supplied inline; escaped `\n` is accepted |
 | `UNRAID_CA_CERT_PATH` | No | | Absolute path to a PEM CA certificate or bundle |
 | `UNRAID_TLS_SKIP_VERIFY` | No | `false` | Disable TLS identity verification for this Unraid client only |
-| `UNRAID_ALLOW_MUTATIONS` | No | `false` | Register lifecycle and notification mutation tools |
-| `UNRAID_ALLOW_DESTRUCTIVE_MUTATIONS` | No | `false` | Register permanent/forced tools and allow correcting parity checks |
+| `UNRAID_ALLOW_MUTATIONS` | No | `false` | Register routine lifecycle, notification, and v4.37.1 mutation tools |
+| `UNRAID_ALLOW_DESTRUCTIVE_MUTATIONS` | No | `false` | Register destructive, credential, security, and other sensitive mutation tools; requires `UNRAID_ALLOW_MUTATIONS=true` |
 | `UNRAID_REQUEST_TIMEOUT_MS` | No | `15000` | Absolute per-request timeout, from 100 to 120000 ms |
 | `UNRAID_MAX_RESPONSE_BYTES` | No | `5242880` | Maximum GraphQL response, from 1 KiB to 50 MiB |
 | `MCP_TRANSPORT` | No | `stdio` | MCP transport: `stdio` or `http` |
@@ -292,7 +292,7 @@ To launch the container image instead, use:
         "UNRAID_URL",
         "--env",
         "UNRAID_API_KEY",
-        "unraid-mcp:0.1.1"
+        "unraid-mcp:0.2.0"
       ],
       "env": {
         "UNRAID_URL": "${UNRAID_URL}",
@@ -352,7 +352,7 @@ args = [
   "UNRAID_URL",
   "--env",
   "UNRAID_API_KEY",
-  "unraid-mcp:0.1.1",
+  "unraid-mcp:0.2.0",
 ]
 env_vars = ["UNRAID_URL", "UNRAID_API_KEY"]
 startup_timeout_sec = 10
@@ -397,7 +397,14 @@ The Inspector is intentionally not a project dependency; invoke the version appr
 
 ## Tools
 
-The following read tools are always registered:
+The tool surface has two layers:
+
+- Twelve stable tools preserve concise names and select fixed compatibility documents according to the discovered API version.
+- The complete v4.37.1 catalog uses `unraid_v4371_*` names. It covers all 58 root query fields through 61 fixed query documents, all 84 effective mutation fields through 86 fixed mutation documents, and all 17 subscriptions. Array state and parity correction use separate documents so safer branches do not inherit destructive permissions.
+
+The MCP does not accept arbitrary GraphQL. Extended tools are generated from a reviewed in-repository catalog with a separate strict Zod input schema for every document. Their calls first require a confirmed API v4.37.1 or newer; listing a latest tool does not imply an older connected server supports it.
+
+The following stable read tools are always registered:
 
 | Tool | Capability |
 | --- | --- |
@@ -431,7 +438,30 @@ The following read tools are always registered:
 | `unraid_remove_docker_container` | Remove a container and optionally its image |
 | `unraid_force_vm` | Force-stop or reset a VM |
 
-It also allows `unraid_control_parity_check` to start with `correct=true`.
+It also allows the high-risk branches of stable tools. They require these exact confirmations:
+
+| Operation | Required argument |
+| --- | --- |
+| Stop the array | `confirmation=STOP_ARRAY` |
+| Start a correcting parity check | `confirmation=WRITE_PARITY_CORRECTIONS` |
+| Cancel a parity check | `confirmation=CANCEL_PARITY_CHECK` |
+| Update a Docker container image | `confirmation=UPDATE_DOCKER_CONTAINER` |
+| Remove a Docker container | `confirmation=REMOVE_DOCKER_CONTAINER` |
+| Force-stop or reset a VM | `confirmation=FORCE_VM_ACTION` |
+
+### Complete v4.37.1 catalog
+
+Safe latest query tools and one-event subscription tools are read-only and registered by default. Queries that accept an OIDC token or provider-defined RClone parameters use the sensitive gate. Routine latest mutations are added by `UNRAID_ALLOW_MUTATIONS=true`. Latest operations classified as destructive or sensitive require both mutation gates and a `confirmation` argument equal to the exact tool name, for example:
+
+```json
+{
+  "confirmation": "unraid_v4371_delete_archived_notifications"
+}
+```
+
+Representative latest tools include `unraid_v4371_query_parity_history`, `unraid_v4371_restart_docker_container`, `unraid_v4371_query_docker_tailscale_status`, `unraid_v4371_configure_ups`, `unraid_v4371_create_api_key`, and `unraid_v4371_setup_remote_access`. Use the MCP client's tool listing for the full typed set; the source catalog is [`src/api-v4.ts`](src/api-v4.ts).
+
+Subscription tools use `unraid_v4371_next_*` names. Each opens an authenticated `graphql-transport-ws` connection to the configured GraphQL endpoint, waits for one event, returns that bounded payload, and disconnects. This makes subscription-only Docker container statistics available without leaving an unbounded background stream. The wait uses `UNRAID_REQUEST_TIMEOUT_MS`, and `https:` endpoints become `wss:` while preserving custom CA and TLS-verification settings.
 
 MCP annotations are hints to clients, not access controls. The environment gates and the Unraid API key's own permissions are the actual controls.
 
@@ -444,8 +474,9 @@ The current official schema does not provide every WebGUI action. In particular:
 - VMs can be controlled, but not created, edited, cloned, snapshotted, or deleted.
 - Host shutdown/reboot mutations are not published.
 - Full SMART reports and SMART self-test controls are not published.
-- Docker `restart` was added after API v4.35.1 and is intentionally not used by this compatibility target.
 - Parity mutation response types are marked work-in-progress by Unraid.
+
+The v4.37.1 schema also contains secret-bearing and provider-defined JSON fields. Read tools use explicit safe projections rather than returning stored API keys, Connect keys, OIDC client secrets, activation data, CSRF/LUKS values, embedded images, or Tailscale authentication URLs. The explicitly confirmed API-key creation mutation returns its newly generated key because that one-time value is required to use the feature. Five inputs remain JSON because the official schema itself defines no narrower type; those operations are sensitive-gated.
 
 See [docs/api-capabilities.md](docs/api-capabilities.md) for the official source references and compatibility details.
 
@@ -459,11 +490,11 @@ pnpm build
 pnpm verify
 ```
 
-Tests use local mock HTTP servers plus in-memory and Streamable HTTP MCP clients. They do not require Docker or a live Unraid server.
+Tests use local mock HTTP and WebSocket servers plus in-memory and Streamable HTTP MCP clients. They do not require Docker or a live Unraid server.
 
 ### Container releases
 
-GitHub Actions builds and vulnerability-scans the container for pull requests and changes to `main` without using registry credentials. Publishing occurs only when a semantic-versioned GitHub Release such as `v0.1.1` is published. The release workflow scans the built image before accessing the protected `dockerhub` environment's `DOCKERHUB_TOKEN`, then publishes version, commit, and (for stable releases) `latest` tags with SBOM and provenance attestations.
+GitHub Actions builds and vulnerability-scans the container for pull requests and changes to `main` without using registry credentials. Publishing occurs only when a semantic-versioned GitHub Release such as `v0.2.0` is published. The release workflow scans the built image before accessing the protected `dockerhub` environment's `DOCKERHUB_TOKEN`, then publishes version, commit, and (for stable releases) `latest` tags with SBOM and provenance attestations.
 
 ## Security Notes
 
@@ -475,8 +506,9 @@ GitHub Actions builds and vulnerability-scans the container for pull requests an
 - It never writes application logs to stdout, which is reserved for MCP JSON-RPC.
 - It does not accept arbitrary GraphQL documents from the model.
 - It does not follow redirects and bounds response size, log line counts, and request duration.
+- GraphQL subscriptions return one bounded event and close rather than creating model-controlled persistent streams.
 - Client cancellation aborts the local HTTP request; mutations already accepted by Unraid cannot be rolled back.
-- GraphQL errors are redacted if they contain the configured API key.
+- GraphQL errors from HTTP success, HTTP failure, and WebSocket responses are bounded and redact the configured API key.
 - Disk serial numbers, logs, notifications, network addresses, and other server data are visible to the connected AI client. Review that client's data-handling policy.
 
 ## Official References
@@ -485,7 +517,7 @@ GitHub Actions builds and vulnerability-scans the container for pull requests an
 - [How to use the Unraid API](https://docs.unraid.net/API/how-to-use-the-api/)
 - [Programmatic API key management](https://docs.unraid.net/API/programmatic-api-key-management/)
 - [Unraid API roadmap and version support](https://docs.unraid.net/API/upcoming-features/)
-- [API v4.35.1 generated GraphQL schema](https://github.com/unraid/api/blob/v4.35.1/api/generated-schema.graphql)
+- [API v4.37.1 generated GraphQL schema](https://github.com/unraid/api/blob/v4.37.1/api/generated-schema.graphql)
 - [Unraid connection security guidance](https://docs.unraid.net/unraid-os/system-administration/secure-your-server/securing-your-connection/)
 - [MCP TypeScript SDK stdio guidance](https://ts.sdk.modelcontextprotocol.io/v2/serving/stdio.html)
 - [MCP TypeScript SDK Streamable HTTP guidance](https://ts.sdk.modelcontextprotocol.io/v2/serving/http.html)
