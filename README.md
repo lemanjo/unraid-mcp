@@ -561,7 +561,7 @@ Tests use local mock HTTP and WebSocket servers plus in-memory and Streamable HT
 
 ### Container releases
 
-GitHub Actions builds and vulnerability-scans the container for pull requests and changes to `main` without using registry credentials. Publishing occurs only when a semantic-versioned GitHub Release such as `v0.2.0` is published. The release workflow scans the built image before accessing the protected `dockerhub` environment's `DOCKERHUB_TOKEN`, then publishes version, commit, and (for stable releases) `latest` tags with SBOM and provenance attestations.
+GitHub Actions builds and vulnerability-scans the container for pull requests without using registry credentials. Successful pushes to `main` access `DOCKERHUB_TOKEN` through a separate `dockerhub-nightly` environment and publish `nightly` plus immutable commit tags. Configure that environment to allow only `main` and omit required reviewers so publishing remains automatic. Semantic-versioned GitHub Releases use the reviewer-protected `dockerhub` environment and publish version, commit, and (for stable releases) `latest` tags. Both publishing paths include SBOM and provenance attestations.
 
 ## Security Notes
 
