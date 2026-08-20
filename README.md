@@ -13,7 +13,7 @@ The MCP is read-only by default. Mutating tools are omitted entirely until expli
 - Unraid 7.2 or later, where the API is built into the OS
 - An Unraid API key
 
-Unraid 7.0-7.1 can expose API v4 through the Unraid Connect plugin, but Unraid documents that combination as limited support. The stable monitoring tools use version-aware fixed-document fallbacks for older API v4 releases. The complete extended tool catalog targets API v4.37.1 and rejects calls clearly when the server cannot confirm that version.
+The API version bundled with an Unraid OS release can be older than the latest separately released API. Unraid 7.0-7.1 can expose API v4 through the Unraid Connect plugin, but Unraid documents that combination as limited support. The stable monitoring tools use version-aware fixed-document fallbacks for older API v4 releases. The complete extended tool catalog targets API v4.37.1 and rejects calls clearly when the server cannot confirm that version.
 
 ## Unraid Setup
 
@@ -31,6 +31,22 @@ unraid-api apikey --create --name "Unraid MCP read only" --roles VIEWER --json
 For mutation access, prefer fine-grained permissions over `ADMIN`. Select only the resources used by the tools you plan to enable, such as `ARRAY`, `DOCKER`, `VMS`, and `NOTIFICATIONS`, with `READ_ANY`, `UPDATE_ANY`, and only where needed `DELETE_ANY`.
 
 The GraphQL Sandbox is not required for this MCP. Leave it disabled outside development because enabling it also enables schema introspection.
+
+### Getting the latest Unraid API
+
+Unraid 7.2 and later include the API, but the version bundled with the OS may lag behind the latest API release. Unraid officially recommends the Unraid Connect plugin for advanced users who want newer API features before they are incorporated into an OS release:
+
+1. Install the **Community Applications** plugin if the **Apps** tab is not already available.
+2. Open **Apps**, search for **Unraid Connect**, and install or update the official plugin.
+3. Wait for plugin installation to complete, then open an Unraid terminal and restart the API:
+
+```bash
+unraid-api restart
+```
+
+The command prints the active version. The complete extended catalog requires `4.37.1` or newer; versions with build metadata such as `4.37.1+d8801361` satisfy that requirement. Restart the MCP container after changing the API version because MCP capability discovery is cached for the lifetime of the process.
+
+Unraid's API documentation states that signing in to Unraid Connect is not required for local API access. Installing the plugin does not require enabling Connect Remote Access; leave remote access disabled unless you separately need and have secured that feature.
 
 ## Install
 
@@ -584,9 +600,11 @@ GitHub Actions builds and vulnerability-scans the container for pull requests wi
 ## Official References
 
 - [Unraid API overview](https://docs.unraid.net/API/)
+- [Unraid API command-line reference](https://docs.unraid.net/API/cli/)
 - [How to use the Unraid API](https://docs.unraid.net/API/how-to-use-the-api/)
 - [Programmatic API key management](https://docs.unraid.net/API/programmatic-api-key-management/)
 - [Unraid API roadmap and version support](https://docs.unraid.net/API/upcoming-features/)
+- [Unraid Connect overview and setup](https://docs.unraid.net/unraid-connect/overview-and-setup/)
 - [API v4.37.1 generated GraphQL schema](https://github.com/unraid/api/blob/v4.37.1/api/generated-schema.graphql)
 - [Unraid connection security guidance](https://docs.unraid.net/unraid-os/system-administration/secure-your-server/securing-your-connection/)
 - [MCP TypeScript SDK stdio guidance](https://ts.sdk.modelcontextprotocol.io/v2/serving/stdio.html)
