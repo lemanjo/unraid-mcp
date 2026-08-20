@@ -1,4 +1,7 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { apiV4SubscriptionToolName, apiV4ToolName } from "../src/api-v4-tools.js";
@@ -13,6 +16,15 @@ import { createServer } from "../src/server.js";
 import { UnraidApiError } from "../src/unraid-client.js";
 
 const closeCallbacks: (() => Promise<void>)[] = [];
+const temporaryDirectories: string[] = [];
+
+function mappedRoot(name = "appdata") {
+  const path = mkdtempSync(join(tmpdir(), "unraid-mcp-server-files-"));
+  temporaryDirectories.push(path);
+  const canonical = realpathSync.native(path);
+  const stats = statSync(canonical, { bigint: true });
+  return { name, path: canonical, device: stats.dev, inode: stats.ino };
+}
 
 function config(overrides: Partial<UnraidConfig> = {}): UnraidConfig {
   return {
@@ -24,6 +36,13 @@ function config(overrides: Partial<UnraidConfig> = {}): UnraidConfig {
     rejectUnauthorized: true,
     allowMutations: false,
     allowDestructiveMutations: false,
+    files: {
+      roots: [],
+      writableRoots: [],
+      allowWrites: false,
+      maxFileBytes: 256 * 1024,
+      maxDirectoryEntries: 500,
+    },
     ...overrides,
   };
 }
@@ -56,6 +75,9 @@ async function connect(
 
 afterEach(async () => {
   await Promise.all(closeCallbacks.splice(0).map((close) => close()));
+  for (const path of temporaryDirectories.splice(0)) {
+    rmSync(path, { force: true, recursive: true });
+  }
 });
 
 describe("createServer", () => {
@@ -381,5 +403,88 @@ describe("createServer", () => {
 
     expect(JSON.stringify(result)).toContain("request was cancelled");
     expect(JSON.stringify(result)).not.toContain("response details were omitted");
+  });
+
+  it("registers mapped-file reads only for explicitly configured roots", async () => {
+    const root = mappedRoot();
+    writeFileSync(join(root.path, "config.txt"), "enabled=true\n");
+    const { client } = await connect(
+      config({
+        files: {
+          roots: [root],
+          writableRoots: [],
+          allowWrites: false,
+          maxFileBytes: 1024,
+          maxDirectoryEntries: 20,
+        },
+      }),
+    );
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+
+    expect(names).toContain("unraid_list_mapped_file_roots");
+    expect(names).toContain("unraid_list_mapped_files");
+    expect(names).toContain("unraid_read_mapped_file");
+    expect(names).not.toContain("unraid_overwrite_mapped_file");
+    const result = await client.callTool({
+      name: "unraid_read_mapped_file",
+      arguments: { root: "appdata", path: "config.txt" },
+    });
+    expect(result.structuredContent).toMatchObject({
+      root: "appdata",
+      path: "config.txt",
+      content: "enabled=true\n",
+    });
+  });
+
+  it("binds mapped-file overwrite confirmation to root, path, and revision", async () => {
+    const root = mappedRoot();
+    const file = join(root.path, "config.txt");
+    writeFileSync(file, "enabled=false\n");
+    const { client } = await connect(
+      config({
+        files: {
+          roots: [root],
+          writableRoots: ["appdata"],
+          allowWrites: true,
+          maxFileBytes: 1024,
+          maxDirectoryEntries: 20,
+        },
+      }),
+    );
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+    expect(names).toContain("unraid_overwrite_mapped_file");
+    const read = await client.callTool({
+      name: "unraid_read_mapped_file",
+      arguments: { root: "appdata", path: "config.txt" },
+    });
+    const revision = String(
+      (read.structuredContent as Record<string, unknown> | undefined)?.sha256,
+    );
+
+    const rejected = await client.callTool({
+      name: "unraid_overwrite_mapped_file",
+      arguments: {
+        root: "appdata",
+        path: "config.txt",
+        content: "enabled=true\n",
+        expectedSha256: revision,
+        confirmation: "OVERWRITE_MAPPED_FILE",
+      },
+    });
+    expect(rejected.isError).toBe(true);
+    expect(readFileSync(file, "utf8")).toBe("enabled=false\n");
+
+    const accepted = await client.callTool({
+      name: "unraid_overwrite_mapped_file",
+      arguments: {
+        root: "appdata",
+        path: "config.txt",
+        content: "enabled=true\n",
+        expectedSha256: revision,
+        confirmation: `OVERWRITE appdata:config.txt@${revision}`,
+      },
+    });
+    expect(accepted.isError).not.toBe(true);
+    expect(readFileSync(file, "utf8")).toBe("enabled=true\n");
   });
 });

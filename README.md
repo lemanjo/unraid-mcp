@@ -102,6 +102,46 @@ docker run --rm -i \
 
 In stdio mode the image does not listen on a port. The AI host launches it with `docker run --rm -i` and owns its lifetime.
 
+### Mapped appdata files
+
+The MCP can list and read UTF-8 configuration files from explicitly named bind mounts. Map only the narrow application directory needed, read-only by default. Build the current source as `unraid-mcp:local`; the JSON values in `MCP_FILE_ROOTS` are paths inside the MCP container:
+
+```bash
+docker build --tag unraid-mcp:local .
+export MCP_FILE_ROOTS='{"plex":"/mnt/appdata/plex"}'
+
+docker run --rm -i \
+  --env UNRAID_URL \
+  --env UNRAID_API_KEY \
+  --env MCP_FILE_ROOTS \
+  --mount type=bind,src=/mnt/user/appdata/plex,dst=/mnt/appdata/plex,readonly \
+  unraid-mcp:local
+```
+
+This registers root discovery, non-recursive directory listing, and bounded text-file reading tools. The model sees only the `plex` alias and relative paths, never the host or container root path. Absolute paths, traversal, symbolic links, special files, invalid UTF-8, and files over `MCP_MAX_FILE_BYTES` are rejected.
+
+To allow overwriting existing files, the alias must also be in `MCP_WRITABLE_FILE_ROOTS`, the separate write gate must be enabled, and the bind mount must be read-write:
+
+```bash
+export MCP_FILE_ROOTS='{"plex":"/mnt/appdata/plex"}'
+export MCP_ALLOW_FILE_WRITES=true
+export MCP_WRITABLE_FILE_ROOTS=plex
+
+docker run --rm -i \
+  --user "$(stat -c '%u:%g' /mnt/user/appdata/plex)" \
+  --env UNRAID_URL \
+  --env UNRAID_API_KEY \
+  --env MCP_FILE_ROOTS \
+  --env MCP_ALLOW_FILE_WRITES \
+  --env MCP_WRITABLE_FILE_ROOTS \
+  --mount type=bind,src=/mnt/user/appdata/plex,dst=/mnt/appdata/plex \
+  unraid-mcp:local
+```
+
+The default image user is numeric UID/GID `65532:65532`; `PUID` and `PGID` variables do not change it. Use `--user`, `--group-add`, or host ACLs to grant only the required access. Do not use `--privileged` or root as a permissions workaround.
+
+Writes are deliberately overwrite-only: the MCP cannot create, delete, rename, or make directories. A write requires the current SHA-256, normally obtained from a prior read, and a confirmation bound to the alias, relative path, and revision. Symlinks, hard-linked files, overlapping roots, and kernel/device pseudo-filesystems are rejected. Writes use the securely opened existing file descriptor, preserving its inode, ownership, and ordinary permission bits; the kernel may clear special mode bits or file capabilities. They are not atomic against crashes or external writers, a failed write can leave partial content, and the SHA-256 is only best-effort optimistic concurrency against non-cooperating processes. Cancellation is honored before mutation starts but not after bytes begin changing.
+
 ### Always-on remote HTTP container
 
 Use authenticated Streamable HTTP when the container runs on a different machine from the AI client. Generate a persistent MCP token on a trusted machine:
@@ -192,6 +232,11 @@ The Docker daemon used by the AI host must have access to the image. Restart Ope
 | `UNRAID_ALLOW_DESTRUCTIVE_MUTATIONS` | No | `false` | Register destructive, credential, security, and other sensitive mutation tools; requires `UNRAID_ALLOW_MUTATIONS=true` |
 | `UNRAID_REQUEST_TIMEOUT_MS` | No | `15000` | Absolute per-request timeout, from 100 to 120000 ms |
 | `UNRAID_MAX_RESPONSE_BYTES` | No | `5242880` | Maximum GraphQL response, from 1 KiB to 50 MiB |
+| `MCP_FILE_ROOTS` | No | None | JSON object mapping short aliases to absolute container-mounted directories; enables mapped-file read tools |
+| `MCP_ALLOW_FILE_WRITES` | No | `false` | Register mapped-file overwrite support; requires `MCP_WRITABLE_FILE_ROOTS` |
+| `MCP_WRITABLE_FILE_ROOTS` | Conditional | None | Comma-separated aliases from `MCP_FILE_ROOTS` that may be overwritten |
+| `MCP_MAX_FILE_BYTES` | No | `262144` | Maximum mapped text-file read or write, from 1 KiB to 1 MiB |
+| `MCP_MAX_DIRECTORY_ENTRIES` | No | `500` | Maximum mapped directory entries per request, from 1 to 5000 |
 | `MCP_TRANSPORT` | No | `stdio` | MCP transport: `stdio` or `http` |
 | `MCP_HOST` | No | `127.0.0.1` | HTTP bind hostname; containers normally use `0.0.0.0` |
 | `MCP_PORT` | No | `3000` | HTTP listening port |
@@ -397,12 +442,14 @@ The Inspector is intentionally not a project dependency; invoke the version appr
 
 ## Tools
 
-The tool surface has two layers:
+The GraphQL tool surface has two layers:
 
 - Twelve stable tools preserve concise names and select fixed compatibility documents according to the discovered API version.
 - The complete v4.37.1 catalog uses `unraid_v4371_*` names. It covers all 58 root query fields through 61 fixed query documents, all 84 effective mutation fields through 86 fixed mutation documents, and all 17 subscriptions. Array state and parity correction use separate documents so safer branches do not inherit destructive permissions.
 
 The MCP does not accept arbitrary GraphQL. Extended tools are generated from a reviewed in-repository catalog with a separate strict Zod input schema for every document. Their calls first require a confirmed API v4.37.1 or newer; listing a latest tool does not imply an older connected server supports it.
+
+Mapped-file tools form a separate, optional surface and are omitted unless `MCP_FILE_ROOTS` is configured.
 
 The following stable read tools are always registered:
 
@@ -463,6 +510,24 @@ Representative latest tools include `unraid_v4371_query_parity_history`, `unraid
 
 Subscription tools use `unraid_v4371_next_*` names. Each opens an authenticated `graphql-transport-ws` connection to the configured GraphQL endpoint, waits for one event, returns that bounded payload, and disconnects. This makes subscription-only Docker container statistics available without leaving an unbounded background stream. The wait uses `UNRAID_REQUEST_TIMEOUT_MS`, and `https:` endpoints become `wss:` while preserving custom CA and TLS-verification settings.
 
+### Mapped-file tools
+
+With `MCP_FILE_ROOTS` configured:
+
+| Tool | Capability |
+| --- | --- |
+| `unraid_list_mapped_file_roots` | List configured aliases, limits, and writable status without exposing absolute paths |
+| `unraid_list_mapped_files` | List one bounded, non-recursive directory without following symlinks |
+| `unraid_read_mapped_file` | Read one bounded UTF-8 regular file and return its SHA-256 revision |
+
+With `MCP_ALLOW_FILE_WRITES=true` and `MCP_WRITABLE_FILE_ROOTS` configured:
+
+| Tool | Capability |
+| --- | --- |
+| `unraid_overwrite_mapped_file` | Overwrite an existing text file after revision and bound-confirmation checks |
+
+Mapped file content is untrusted and can contain prompt-injection text. The environment settings, Docker mount mode, Unix permissions, and MCP client approval are the actual controls; the deterministic confirmation argument is an intent check, not human authorization. The administrator controls the mounted directory: this feature does not defend against a malicious host that rearranges mounts while an operation is running.
+
 MCP annotations are hints to clients, not access controls. The environment gates and the Unraid API key's own permissions are the actual controls.
 
 ## API Limitations
@@ -505,6 +570,9 @@ GitHub Actions builds and vulnerability-scans the container for pull requests an
 - The built-in HTTP listener does not provide TLS. Use an HTTPS reverse proxy and do not expose it directly to the internet.
 - It never writes application logs to stdout, which is reserved for MCP JSON-RPC.
 - It does not accept arbitrary GraphQL documents from the model.
+- It does not accept arbitrary host paths. Optional file access is confined to explicitly mounted aliases and rejects traversal and symlinks.
+- Mapped roots should be narrow and read-only. One remote MCP bearer token grants every file capability registered by that server.
+- Mapped-file overwrites require a writable alias, matching SHA-256 revision, bound confirmation, writable mount, and Unix permission.
 - It does not follow redirects and bounds response size, log line counts, and request duration.
 - GraphQL subscriptions return one bounded event and close rather than creating model-controlled persistent streams.
 - Client cancellation aborts the local HTTP request; mutations already accepted by Unraid cannot be rolled back.

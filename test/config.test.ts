@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
 
 import { ConfigurationError, loadConfig } from "../src/config.js";
 
@@ -6,6 +10,19 @@ const requiredEnvironment = {
   UNRAID_URL: "https://tower.local",
   UNRAID_API_KEY: "test-api-key",
 };
+const temporaryDirectories: string[] = [];
+
+function temporaryDirectory(): string {
+  const path = mkdtempSync(join(tmpdir(), "unraid-mcp-config-"));
+  temporaryDirectories.push(path);
+  return path;
+}
+
+afterEach(() => {
+  for (const path of temporaryDirectories.splice(0)) {
+    rmSync(path, { force: true, recursive: true });
+  }
+});
 
 describe("loadConfig", () => {
   it("loads a read-only HTTPS configuration and adds /graphql", () => {
@@ -18,6 +35,97 @@ describe("loadConfig", () => {
     expect(config.rejectUnauthorized).toBe(true);
     expect(config.transport).toBe("stdio");
     expect(config.http.authToken).toBeUndefined();
+    expect(config.files).toMatchObject({
+      roots: [],
+      writableRoots: [],
+      allowWrites: false,
+      maxFileBytes: 256 * 1024,
+      maxDirectoryEntries: 500,
+    });
+  });
+
+  it("loads named mapped roots and a separate writable-root allowlist", () => {
+    const appdata = temporaryDirectory();
+    const backups = temporaryDirectory();
+    const config = loadConfig({
+      ...requiredEnvironment,
+      MCP_FILE_ROOTS: JSON.stringify({ appdata, backups }),
+      MCP_ALLOW_FILE_WRITES: "true",
+      MCP_WRITABLE_FILE_ROOTS: "appdata",
+      MCP_MAX_FILE_BYTES: "4096",
+      MCP_MAX_DIRECTORY_ENTRIES: "25",
+    });
+
+    expect(config.files.roots.map((root) => root.name)).toEqual(["appdata", "backups"]);
+    expect(config.files.writableRoots).toEqual(["appdata"]);
+    expect(config.files.allowWrites).toBe(true);
+    expect(config.files.maxFileBytes).toBe(4096);
+    expect(config.files.maxDirectoryEntries).toBe(25);
+  });
+
+  it.each([
+    ["not-json", "must be a JSON object"],
+    [JSON.stringify({ AppData: "/tmp" }), "names must start with a lowercase letter"],
+    [JSON.stringify({ appdata: "relative/path" }), "must be an absolute path"],
+    [JSON.stringify({ proc: "/proc" }), "uses a protected container path"],
+    [JSON.stringify({ missing: "/path/that/does/not/exist" }), "is not an accessible directory"],
+  ])("rejects invalid mapped roots", (roots, message) => {
+    expect(() => loadConfig({ ...requiredEnvironment, MCP_FILE_ROOTS: roots })).toThrow(message);
+  });
+
+  it("requires both the file-write gate and configured writable aliases", () => {
+    const appdata = temporaryDirectory();
+    const roots = JSON.stringify({ appdata });
+
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        MCP_FILE_ROOTS: roots,
+        MCP_ALLOW_FILE_WRITES: "true",
+      }),
+    ).toThrow("MCP_ALLOW_FILE_WRITES=true requires MCP_WRITABLE_FILE_ROOTS");
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        MCP_FILE_ROOTS: roots,
+        MCP_WRITABLE_FILE_ROOTS: "appdata",
+      }),
+    ).toThrow("MCP_WRITABLE_FILE_ROOTS requires MCP_ALLOW_FILE_WRITES=true");
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        MCP_FILE_ROOTS: roots,
+        MCP_ALLOW_FILE_WRITES: "true",
+        MCP_WRITABLE_FILE_ROOTS: "unknown",
+      }),
+    ).toThrow("may contain only names configured in MCP_FILE_ROOTS");
+  });
+
+  it("rejects a configured root that is itself a symbolic link", () => {
+    const parent = temporaryDirectory();
+    const target = temporaryDirectory();
+    const link = join(parent, "appdata-link");
+    symlinkSync(target, link);
+
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        MCP_FILE_ROOTS: JSON.stringify({ appdata: link }),
+      }),
+    ).toThrow("must not be a symbolic link");
+  });
+
+  it("rejects overlapping mapped roots", () => {
+    const appdata = temporaryDirectory();
+    const nested = join(appdata, "nested");
+    mkdirSync(nested);
+
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        MCP_FILE_ROOTS: JSON.stringify({ appdata, nested }),
+      }),
+    ).toThrow("must resolve to distinct, non-overlapping directories");
   });
 
   it("preserves an explicit reverse-proxy endpoint", () => {

@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 
 import { registerApiV4Tools } from "./api-v4-tools.js";
 import type { UnraidConfig } from "./config.js";
+import { registerFileTools } from "./file-tools.js";
 import {
   ARRAY_STATE_MUTATION,
   DOCKER_CONTROL_MUTATIONS,
@@ -450,6 +451,7 @@ export function createServer(
     registerDestructiveTools(server, client);
   }
   registerApiV4Tools(server, client, readFacade, config);
+  registerFileTools(server, config.files);
 
   return server;
 }

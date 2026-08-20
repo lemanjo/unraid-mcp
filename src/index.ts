@@ -15,6 +15,11 @@ async function main(): Promise<void> {
   if (!config.rejectUnauthorized) {
     console.error("[unraid-mcp] Warning: TLS certificate verification is disabled for Unraid.");
   }
+  if (config.files.roots.length > 0) {
+    console.error(
+      `[unraid-mcp] Mapped file roots: ${config.files.roots.map((root) => root.name).join(", ")} (${config.files.allowWrites ? `writable: ${config.files.writableRoots.join(", ")}` : "read-only"}).`,
+    );
+  }
 
   const handle =
     config.transport === "http"

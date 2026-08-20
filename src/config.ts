@@ -1,8 +1,26 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import { isIP, SocketAddress } from "node:net";
+import { isAbsolute, resolve, sep } from "node:path";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+const DEFAULT_MAX_FILE_BYTES = 256 * 1024;
+const DEFAULT_MAX_DIRECTORY_ENTRIES = 500;
+
+export interface FileRootConfig {
+  name: string;
+  path: string;
+  device: bigint;
+  inode: bigint;
+}
+
+export interface FileAccessConfig {
+  roots: readonly FileRootConfig[];
+  writableRoots: readonly string[];
+  allowWrites: boolean;
+  maxFileBytes: number;
+  maxDirectoryEntries: number;
+}
 
 export class ConfigurationError extends Error {
   constructor(message: string) {
@@ -20,6 +38,7 @@ export interface UnraidConfig {
   rejectUnauthorized: boolean;
   allowMutations: boolean;
   allowDestructiveMutations: boolean;
+  files: FileAccessConfig;
 }
 
 export interface McpHttpConfig {
@@ -114,6 +133,126 @@ function parseHostnameList(env: NodeJS.ProcessEnv, name: string): string[] {
     throw new ConfigurationError(`${name} must be a comma-separated hostname list.`);
   }
   return [...new Set(values.map((value) => validateHostname(value, name, false)))];
+}
+
+function parseNameList(env: NodeJS.ProcessEnv, name: string): string[] {
+  const raw = env[name]?.trim();
+  if (!raw) return [];
+  const names = raw.split(",").map((value) => value.trim());
+  if (names.some((value) => !/^[a-z][a-z0-9_-]{0,31}$/.test(value))) {
+    throw new ConfigurationError(
+      `${name} must be a comma-separated list of lowercase file-root names.`,
+    );
+  }
+  return [...new Set(names)];
+}
+
+function isWellFormedString(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      if (index + 1 >= value.length) return false;
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return false;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isProtectedFileRoot(path: string): boolean {
+  const protectedPaths = ["/app", "/dev", "/etc", "/proc", "/run", "/sys"];
+  return path === "/" || protectedPaths.some((entry) => path === entry || path.startsWith(`${entry}${sep}`));
+}
+
+function parseFileRoots(env: NodeJS.ProcessEnv): readonly FileRootConfig[] {
+  const raw = env.MCP_FILE_ROOTS?.trim();
+  if (!raw) return [];
+  if (process.platform !== "linux") {
+    throw new ConfigurationError("MCP_FILE_ROOTS is supported only on Linux.");
+  }
+  if (Buffer.byteLength(raw) > 16 * 1024) {
+    throw new ConfigurationError("MCP_FILE_ROOTS exceeds the 16 KiB configuration limit.");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ConfigurationError("MCP_FILE_ROOTS must be a JSON object of name-to-path entries.");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new ConfigurationError("MCP_FILE_ROOTS must be a JSON object of name-to-path entries.");
+  }
+
+  const entries = Object.entries(parsed);
+  if (entries.length === 0 || entries.length > 16) {
+    throw new ConfigurationError("MCP_FILE_ROOTS must define between 1 and 16 roots.");
+  }
+  const roots: FileRootConfig[] = [];
+  for (const [name, configuredPath] of entries) {
+    if (!/^[a-z][a-z0-9_-]{0,31}$/.test(name)) {
+      throw new ConfigurationError(
+        "MCP_FILE_ROOTS names must start with a lowercase letter and use only lowercase letters, digits, underscores, or hyphens.",
+      );
+    }
+    if (
+      typeof configuredPath !== "string" ||
+      configuredPath.length === 0 ||
+      configuredPath.includes("\0") ||
+      !isWellFormedString(configuredPath) ||
+      !isAbsolute(configuredPath)
+    ) {
+      throw new ConfigurationError(`MCP_FILE_ROOTS entry ${name} must be an absolute path.`);
+    }
+
+    const normalized = resolve(configuredPath);
+    let canonical: string;
+    let stats: ReturnType<typeof statSync>;
+    try {
+      canonical = realpathSync.native(normalized);
+      stats = statSync(canonical, { bigint: true });
+    } catch {
+      throw new ConfigurationError(`MCP_FILE_ROOTS entry ${name} is not an accessible directory.`);
+    }
+    if (canonical !== normalized) {
+      throw new ConfigurationError(`MCP_FILE_ROOTS entry ${name} must not be a symbolic link.`);
+    }
+    if (!stats.isDirectory()) {
+      throw new ConfigurationError(`MCP_FILE_ROOTS entry ${name} is not a directory.`);
+    }
+    if (isProtectedFileRoot(canonical)) {
+      throw new ConfigurationError(`MCP_FILE_ROOTS entry ${name} uses a protected container path.`);
+    }
+    if (
+      roots.some(
+        (root) =>
+          (root.device === stats.dev && root.inode === stats.ino) ||
+          canonical.startsWith(`${root.path}${sep}`) ||
+          root.path.startsWith(`${canonical}${sep}`),
+      )
+    ) {
+      throw new ConfigurationError(
+        "MCP_FILE_ROOTS entries must resolve to distinct, non-overlapping directories.",
+      );
+    }
+    roots.push(Object.freeze({
+      name,
+      path: canonical,
+      device: stats.dev,
+      inode: stats.ino,
+    }));
+  }
+
+  try {
+    const procFd = statSync("/proc/self/fd");
+    if (!procFd.isDirectory()) throw new Error("not a directory");
+  } catch {
+    throw new ConfigurationError("MCP_FILE_ROOTS requires an accessible /proc/self/fd.");
+  }
+  return Object.freeze(roots);
 }
 
 function parseAuthToken(env: NodeJS.ProcessEnv): string | undefined {
@@ -222,12 +361,31 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     "UNRAID_ALLOW_DESTRUCTIVE_MUTATIONS",
     false,
   );
+  const fileRoots = parseFileRoots(env);
+  const allowFileWrites = parseBoolean(env, "MCP_ALLOW_FILE_WRITES", false);
+  const writableFileRoots = parseNameList(env, "MCP_WRITABLE_FILE_ROOTS");
   const rejectUnauthorized = !parseBoolean(env, "UNRAID_TLS_SKIP_VERIFY", false);
   const ca = loadCa(env);
 
   if (allowDestructiveMutations && !allowMutations) {
     throw new ConfigurationError(
       "UNRAID_ALLOW_DESTRUCTIVE_MUTATIONS requires UNRAID_ALLOW_MUTATIONS=true.",
+    );
+  }
+  if (allowFileWrites && writableFileRoots.length === 0) {
+    throw new ConfigurationError(
+      "MCP_ALLOW_FILE_WRITES=true requires MCP_WRITABLE_FILE_ROOTS.",
+    );
+  }
+  if (!allowFileWrites && writableFileRoots.length > 0) {
+    throw new ConfigurationError(
+      "MCP_WRITABLE_FILE_ROOTS requires MCP_ALLOW_FILE_WRITES=true.",
+    );
+  }
+  const fileRootNames = new Set(fileRoots.map((root) => root.name));
+  if (writableFileRoots.some((name) => !fileRootNames.has(name))) {
+    throw new ConfigurationError(
+      "MCP_WRITABLE_FILE_ROOTS may contain only names configured in MCP_FILE_ROOTS.",
     );
   }
   if (endpoint.protocol === "http:" && (ca || !rejectUnauthorized)) {
@@ -254,6 +412,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     rejectUnauthorized,
     allowMutations,
     allowDestructiveMutations,
+    files: {
+      roots: fileRoots,
+      writableRoots: Object.freeze(writableFileRoots),
+      allowWrites: allowFileWrites,
+      maxFileBytes: parseInteger(
+        env,
+        "MCP_MAX_FILE_BYTES",
+        DEFAULT_MAX_FILE_BYTES,
+        1_024,
+        1024 * 1024,
+      ),
+      maxDirectoryEntries: parseInteger(
+        env,
+        "MCP_MAX_DIRECTORY_ENTRIES",
+        DEFAULT_MAX_DIRECTORY_ENTRIES,
+        1,
+        5_000,
+      ),
+    },
     transport,
     http: {
       host: httpHost,

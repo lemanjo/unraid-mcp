@@ -70,6 +70,8 @@ Sources:
 
 Compatibility documents are in [`src/queries.ts`](../src/queries.ts). The complete catalog is in [`src/api-v4.ts`](../src/api-v4.ts): 61 queries cover all 58 root query fields, 86 mutations cover all 84 effective mutation fields, and 17 fixed subscription documents cover every subscription field. All 164 documents validate against the tagged official schema. They intentionally avoid arbitrary GraphQL execution so an AI client cannot bypass the advertised tool surface.
 
+Mapped-file tools are separate from the Unraid GraphQL API. They operate only on administrator-configured container bind mounts, use named aliases instead of arbitrary paths, and are documented in the main README.
+
 ## Safe Projection Exceptions
 
 Every v4.37.1 root capability is represented, but exposing every raw output field would disclose credentials or unbounded provider data. Fixed read projections omit stored API keys, server API keys, registration key files, CSRF and LUKS values, OIDC client secrets, activation codes, embedded case images, Tailscale authentication URLs, and broad/unbounded JSON where narrower fields exist. API-key creation is the deliberate exception: its sensitive-gated, explicitly confirmed mutation returns the newly generated key once.

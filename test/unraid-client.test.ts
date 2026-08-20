@@ -41,6 +41,13 @@ function config(endpoint: URL, overrides: Partial<UnraidConfig> = {}): UnraidCon
     rejectUnauthorized: true,
     allowMutations: false,
     allowDestructiveMutations: false,
+    files: {
+      roots: [],
+      writableRoots: [],
+      allowWrites: false,
+      maxFileBytes: 256 * 1024,
+      maxDirectoryEntries: 500,
+    },
     ...overrides,
   };
 }
