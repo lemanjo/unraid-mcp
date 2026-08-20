@@ -67,6 +67,8 @@ Versioned release images are published to [Docker Hub](https://hub.docker.com/r/
 docker pull lemanjo/unraid-mcp:0.2.0
 ```
 
+Every direct push or merged pull request to `main` publishes an unreleased development image as `lemanjo/unraid-mcp:nightly` after the container smoke test and vulnerability scan pass. The same image also receives an immutable `sha-<full-commit-sha>` tag. Pull requests are built and scanned but are not published before merge. Use a versioned release for production; the `nightly` tag moves whenever `main` is updated.
+
 The final image uses a digest-pinned Distroless Node.js runtime. It runs without a shell, package manager, npm, or other build tooling and as a numeric non-root user. Container builds are scanned with Trivy and fail before registry login when a fixable critical or high vulnerability is present.
 
 Build the production image on your Unraid server or another Docker host:
