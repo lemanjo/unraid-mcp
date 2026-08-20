@@ -4,6 +4,7 @@ import * as z from "zod/v4";
 import { registerApiV4Tools } from "./api-v4-tools.js";
 import type { UnraidConfig } from "./config.js";
 import { registerFileTools } from "./file-tools.js";
+import { logToStderr } from "./logger.js";
 import {
   ARRAY_STATE_MUTATION,
   DOCKER_CONTROL_MUTATIONS,
@@ -46,14 +47,14 @@ async function runTool(operation: () => Promise<Record<string, unknown>>) {
     return success(await operation());
   } catch (error) {
     if (error instanceof UnraidApiError) {
-      console.error(`[unraid-mcp] ${error.code}: ${error.message}`);
+      logToStderr(`[unraid-mcp] ${error.code}: ${error.message}`);
       return {
         content: [{ type: "text" as const, text: error.message }],
         isError: true,
       };
     }
 
-    console.error("[unraid-mcp] Unexpected tool failure");
+    logToStderr("[unraid-mcp] Unexpected tool failure");
     return {
       content: [{ type: "text" as const, text: "Unexpected Unraid MCP error." }],
       isError: true,

@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 
 import type { FileAccessConfig } from "./config.js";
 import { FileAccessError, FileAccessService } from "./file-access.js";
+import { logToStderr } from "./logger.js";
 
 const services = new WeakMap<FileAccessConfig, FileAccessService>();
 
@@ -40,13 +41,13 @@ async function runFileTool(operation: () => Promise<Record<string, unknown>>) {
     return success(await operation());
   } catch (error) {
     if (error instanceof FileAccessError) {
-      console.error(`[unraid-mcp] ${error.code}: ${error.message}`);
+      logToStderr(`[unraid-mcp] ${error.code}: ${error.message}`);
       return {
         content: [{ type: "text" as const, text: error.message }],
         isError: true,
       };
     }
-    console.error("[unraid-mcp] Unexpected mapped-file tool failure");
+    logToStderr("[unraid-mcp] Unexpected mapped-file tool failure");
     return {
       content: [{ type: "text" as const, text: "Unexpected mapped-file MCP error." }],
       isError: true,

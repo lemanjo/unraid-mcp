@@ -570,7 +570,7 @@ GitHub Actions builds and vulnerability-scans the container for pull requests wi
 - Generated tokens are operational secrets: restrict log access and configure `MCP_AUTH_TOKEN` for a stable deployment.
 - HTTP mode validates Host and Origin headers, rate-limits failed authentication, caps request bodies, and defaults to a loopback bind.
 - The built-in HTTP listener does not provide TLS. Use an HTTPS reverse proxy and do not expose it directly to the internet.
-- It never writes application logs to stdout, which is reserved for MCP JSON-RPC.
+- It prefixes application stderr logs with ISO-8601 UTC timestamps and never writes them to stdout, which is reserved for MCP JSON-RPC.
 - It does not accept arbitrary GraphQL documents from the model.
 - It does not accept arbitrary host paths. Optional file access is confined to explicitly mounted aliases and rejects traversal and symlinks.
 - Mapped roots should be narrow and read-only. One remote MCP bearer token grants every file capability registered by that server.

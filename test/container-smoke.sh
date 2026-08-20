@@ -24,6 +24,11 @@ for _ in {1..20}; do
   status="$(docker inspect --format '{{.State.Health.Status}}' "$container_id")"
   case "$status" in
     healthy)
+      logs="$(docker logs "$container_id" 2>&1)"
+      if [[ ! "$logs" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z[[:space:]]\[unraid-mcp\][[:space:]] ]]; then
+        printf 'Container logs do not start with an ISO-8601 UTC timestamp:\n%s\n' "$logs" >&2
+        exit 1
+      fi
       exit 0
       ;;
     unhealthy)

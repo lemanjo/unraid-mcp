@@ -15,6 +15,7 @@ import {
 import { createMcpHandler, type AuthInfo, type McpServer } from "@modelcontextprotocol/server";
 
 import type { AppConfig } from "./config.js";
+import { logToStderr } from "./logger.js";
 import { createServer } from "./server.js";
 
 const MCP_PATH = "/mcp";
@@ -187,7 +188,7 @@ export async function startHttpServer(
   config: AppConfig,
   options: HttpServerOptions = {},
 ): Promise<HttpServerHandle> {
-  const logger = options.logger ?? console.error;
+  const logger = options.logger ?? logToStderr;
   const generatedAuthToken = config.http.authToken === undefined;
   const authToken = config.http.authToken ?? (options.tokenGenerator ?? (() => randomBytes(32).toString("base64url")))();
   const expectedTokenHash = hashToken(authToken);
