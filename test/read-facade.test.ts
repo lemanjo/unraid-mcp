@@ -20,6 +20,7 @@ import {
   API_CAPABILITIES_QUERY,
   API_VERSION_INFO_QUERY,
   classifyGraphQLError,
+  isApiVersionAtLeast,
   VersionAwareUnraidReadFacade,
   VMS_COMPAT_QUERY,
 } from "../src/read-facade.js";
@@ -30,6 +31,16 @@ function services(version: string): Record<string, unknown> {
 }
 
 describe("VersionAwareUnraidReadFacade", () => {
+  it.each([
+    ["4.37.1+d8801361", "4.37.1", true],
+    ["v4.37.1+d8801361", "4.37.1", true],
+    ["4.37.0+d8801361", "4.37.1", false],
+    ["4.37.1-rc.1+d8801361", "4.37.1", false],
+    ["invalid", "4.37.1", false],
+  ])("compares API version %s against %s", (version, minimum, expected) => {
+    expect(isApiVersionAtLeast(version, minimum)).toBe(expected);
+  });
+
   it("discovers and caches capabilities while merging modern system fragments", async () => {
     const execute = vi.fn(async (query: string) => {
       if (query === API_CAPABILITIES_QUERY) return services("4.35.1");

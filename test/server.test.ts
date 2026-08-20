@@ -206,7 +206,7 @@ describe("createServer", () => {
     expect(contradictoryNames).not.toContain("unraid_force_vm");
   });
 
-  it("executes a fixed latest query only on a supported API version", async () => {
+  it("executes a fixed latest query when the supported API includes build metadata", async () => {
     const operation = UNRAID_API_V4_37_1_OPERATIONS.find(
       (candidate) => candidate.name === "UnraidV4371QueryOnline",
     );
@@ -215,7 +215,7 @@ describe("createServer", () => {
 
     const execute = vi.fn(async (query: string) => {
       if (query === API_CAPABILITIES_QUERY) {
-        return { services: [{ name: "unraid-api", version: "4.37.1" }] };
+        return { services: [{ name: "unraid-api", version: "4.37.1+d8801361" }] };
       }
       if (query === operation.document) return { online: true };
       throw new Error("Unexpected query");
