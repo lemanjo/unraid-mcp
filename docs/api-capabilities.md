@@ -1,6 +1,6 @@
 # Unraid API Capability Reference
 
-This MCP uses Unraid's official GraphQL API at the WebGUI origin's `/graphql` endpoint. Its complete typed catalog targets API v4.37.1, while its stable monitoring tools select fixed fallback documents for older API v4 releases. API keys use the officially documented `x-api-key` header and GraphQL WebSocket connection parameter.
+This MCP uses Unraid's official GraphQL API at the WebGUI origin's `/graphql` endpoint. Its typed catalog is based on API v4.37.1 and has been checked against v4.37.12, bundled with Unraid OS 7.4.1. API keys use the officially documented `x-api-key` header and GraphQL WebSocket connection parameter.
 
 ## Version and Discovery
 
@@ -12,7 +12,7 @@ query McpApiCapabilities {
 }
 ```
 
-The MCP selects the `unraid-api` service and caches its semantic version. Some keys cannot read `SERVICES`, so permission or schema failures trigger fixed `info.versions.core.api` and `settings.api.version` probes. Authentication, network, and unrelated runtime errors are not mistaken for compatibility failures. If no probe is permitted, stable tools optimistically try modern fixed documents and downgrade only for recognized schema-validation errors; latest `unraid_v4371_*` calls remain blocked because their minimum version cannot be confirmed.
+The MCP selects the `unraid-api` service and normally caches its semantic version. Some keys cannot read `SERVICES`, so permission or schema failures trigger fixed `info.versions.core.api` and `settings.api.version` probes. Authentication, network, and unrelated runtime errors are not mistaken for compatibility failures. If no probe is permitted, stable tools optimistically try modern fixed documents and downgrade only for recognized schema-validation errors; `unraid_v4371_*` calls remain blocked because their version requirements cannot be confirmed. The legacy disk-removal tool rechecks the version on every confirmed call so an upgrade does not leave it relying on a cached version.
 
 The GraphQL Sandbox and introspection can be enabled for development from **Settings > Management Access > Developer Options** or with:
 
@@ -28,6 +28,8 @@ Sources:
 - [Using the API and Sandbox](https://docs.unraid.net/API/how-to-use-the-api/)
 - [Version support](https://docs.unraid.net/API/upcoming-features/)
 - [Versioned API v4.37.1 schema](https://github.com/unraid/api/blob/v4.37.1/api/generated-schema.graphql)
+- [Versioned API v4.37.12 schema](https://github.com/unraid/api/blob/v4.37.12/api/generated-schema.graphql)
+- [Unraid OS 7.4.1 bundled API](https://docs.unraid.net/unraid-os/release-notes/7.4.1/#unraid-api)
 
 ## Authentication and Permissions
 
@@ -61,6 +63,7 @@ Sources:
 | Parity | Start, pause, resume, and cancel | Marked WIP by Unraid; correcting mode can write data |
 | Disks | Identity, serial, interface, SMART summary, temperature, partitions, spin state | No complete SMART attribute report or self-test mutation |
 | Shares | Capacity, include/exclude, cache, allocator, split level, COW, LUKS status | Read-only in the current schema |
+| Mover | Active status via `vars.shareMoverActive` (`VARS:READ_ANY`) | `null` means status was not reported. Detailed progress and job control are not published in GraphQL |
 | Docker | List/status, ports, logs, Tailscale status, organizer, autostart, start/stop/restart/pause/unpause/update/remove, and live statistics | No create/edit in the official schema |
 | VMs | List/state, start/stop/pause/resume/reboot/force-stop/reset | No create/edit/delete/snapshot/clone |
 | UPS | Status, battery, runtime, health, voltage, load, power, and configuration | The current implementation commonly represents one physical UPS despite returning a list |
@@ -68,7 +71,7 @@ Sources:
 | Logs | List and read system logs; timestamped Docker logs with cursor | Docker log requests are capped by Unraid at 2,000 lines in API v4.35.1 |
 | Administration | API keys, settings, OIDC, SSH, identity, plugins, onboarding, RClone, Connect, remote access, system time, temperature, and UPS configuration | Credential/security operations are sensitive-gated and use safe result projections |
 
-Compatibility documents are in [`src/queries.ts`](../src/queries.ts). The complete catalog is in [`src/api-v4.ts`](../src/api-v4.ts): 61 queries cover all 58 root query fields, 86 mutations cover all 84 effective mutation fields, and 17 fixed subscription documents cover every subscription field. All 164 documents validate against the tagged official schema. They intentionally avoid arbitrary GraphQL execution so an AI client cannot bypass the advertised tool surface.
+Compatibility documents are in [`src/queries.ts`](../src/queries.ts). The catalog in [`src/api-v4.ts`](../src/api-v4.ts) contains 61 queries that cover all 58 v4.37.1 root query fields, 86 mutations that cover all 84 effective v4.37.1 mutation fields, and 17 fixed subscription documents. All 164 documents validate against v4.37.1; 163 validate against v4.37.12 because Unraid removed `array.removeDiskFromArray`. The MCP accepts only fixed GraphQL documents.
 
 Mapped-file tools are separate from the Unraid GraphQL API. They operate only on administrator-configured container bind mounts, use named aliases instead of arbitrary paths, and are documented in the main README.
 
@@ -108,12 +111,14 @@ API fields can differ between the version bundled with Unraid OS and a newer API
 | v4.15+ | Modern system-information projection |
 | v4.30-v4.34 | Compatibility network fields, temperature metrics, complete UPS power fields, modern VM-domain projection, and safe disk projection |
 | v4.35+ | Rich network addresses and network metrics |
-| v4.37.1+ | Complete `unraid_v4371_*` query, mutation, and one-event subscription catalog |
+| v4.37.1–v4.37.3 (stable) | Complete `unraid_v4371_*` query, mutation, and one-event subscription catalog |
+| v4.37.4+ | `unraid_v4371_remove_disk_from_array` is blocked because Unraid removed `array.removeDiskFromArray` |
+| v4.37.8+ | The API can return `docker: null` or `vms: null`; the MCP preserves those results when no GraphQL errors accompany them |
 
 Fallbacks occur only for recognized GraphQL schema-validation errors. Permission and runtime errors remain visible. Three resolver-specific normalizations are intentionally narrow:
 
 - `Disk.bytesPerSector` is fetched separately. If Unraid violates its non-null schema by returning null, disk listing still succeeds without that field.
 - An explicitly disabled UPS returns its configuration and an empty device list without running `apcaccess`.
-- An explicitly unavailable or disabled VM service returns an empty domain list; unrelated VM failures remain errors.
+- For legacy VM resolver errors that explicitly report the VM service is disabled or unavailable, the stable VM tool returns an empty domain list. A successful response with `vms: null` is preserved as `null`; authorization and unrelated runtime failures remain errors.
 
-The latest catalog uses a conservative v4.37.1 minimum rather than guessing that a complete document exists on an intermediate release. Use the stable tools on older servers or compare the reported version's generated schema in the [official Unraid API repository](https://github.com/unraid/api/tags).
+The catalog uses a conservative v4.37.1 minimum. Use the stable tools on older servers or compare the reported version's generated schema in the [official Unraid API repository](https://github.com/unraid/api/tags).

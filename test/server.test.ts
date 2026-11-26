@@ -10,7 +10,14 @@ import {
   UNRAID_API_V4_37_1_SUBSCRIPTIONS,
 } from "../src/api-v4.js";
 import type { UnraidConfig } from "../src/config.js";
-import { DOCKER_LOGS_QUERY, SYSTEM_INFO_QUERY, SYSTEM_NETWORK_QUERY } from "../src/queries.js";
+import {
+  DOCKER_CONTAINERS_QUERY,
+  DOCKER_LOGS_QUERY,
+  MOVER_STATUS_QUERY,
+  SYSTEM_INFO_QUERY,
+  SYSTEM_NETWORK_QUERY,
+  VMS_QUERY,
+} from "../src/queries.js";
 import { API_CAPABILITIES_QUERY } from "../src/read-facade.js";
 import { createServer } from "../src/server.js";
 import { UnraidApiError } from "../src/unraid-client.js";
@@ -90,10 +97,11 @@ describe("createServer", () => {
       (operation) => operation.kind === "query" && !operation.requiresConfirmation,
     );
     expect(names).toHaveLength(
-      12 + latestReads.length + UNRAID_API_V4_37_1_SUBSCRIPTIONS.length,
+      13 + latestReads.length + UNRAID_API_V4_37_1_SUBSCRIPTIONS.length,
     );
     expect(names).toContain("unraid_get_system_info");
     expect(names).toContain("unraid_read_system_log");
+    expect(names).toContain("unraid_get_mover_status");
     expect(names).not.toContain("unraid_control_array");
     expect(names).not.toContain("unraid_remove_docker_container");
   });
@@ -122,7 +130,7 @@ describe("createServer", () => {
     ] as const;
 
     expect(tools).toHaveLength(
-      19 +
+      20 +
         UNRAID_API_V4_37_1_OPERATIONS.length +
         UNRAID_API_V4_37_1_SUBSCRIPTIONS.length +
         4,
@@ -204,6 +212,58 @@ describe("createServer", () => {
       tail: 200,
       since: undefined,
     }, expect.any(AbortSignal));
+  });
+
+  it.each([
+    ["unraid_list_docker_containers", DOCKER_CONTAINERS_QUERY, "docker", "containers"],
+    ["unraid_list_vms", VMS_QUERY, "vms", "domains"],
+  ])("distinguishes an unavailable inventory, an empty list, and access denial in %s", async (
+    name, document, root, field,
+  ) => {
+    const denied = new UnraidApiError("GRAPHQL_ERROR", `Access denied for ${root}`);
+    const inventory = vi.fn<() => Promise<Record<string, unknown>>>()
+      .mockResolvedValueOnce({ [root]: null })
+      .mockResolvedValueOnce({ [root]: { [field]: [] } })
+      .mockRejectedValueOnce(denied);
+    const { client } = await connect(config(), async (query) => {
+      if (query === API_CAPABILITIES_QUERY) {
+        return { services: [{ name: "unraid-api", version: "4.37.12" }] };
+      }
+      if (query === document) return inventory();
+      throw new Error("Unexpected query");
+    });
+
+    const unavailable = await client.callTool({ name });
+    expect(unavailable.isError).not.toBe(true);
+    expect(unavailable.structuredContent).toEqual({ [root]: null });
+    const empty = await client.callTool({ name });
+    expect(empty.structuredContent).toEqual({ [root]: { [field]: [] } });
+    const forbidden = await client.callTool({ name });
+    expect(forbidden.isError).toBe(true);
+    expect(forbidden.content).toEqual([{ type: "text", text: denied.message }]);
+  });
+
+  it.each([true, false, null])("reads Mover status %s without version discovery", async (active) => {
+    const execute = vi.fn(async (query: string) => {
+      if (query !== MOVER_STATUS_QUERY) throw new Error("Unexpected query");
+      return { vars: { shareMoverActive: active } };
+    });
+    const { client } = await connect(config(), execute);
+
+    const result = await client.callTool({ name: "unraid_get_mover_status" });
+
+    expect(result.structuredContent).toEqual({ vars: { shareMoverActive: active } });
+    expect(execute).toHaveBeenCalledExactlyOnceWith(MOVER_STATUS_QUERY, {}, expect.any(AbortSignal));
+  });
+
+  it("reports Mover access denial rather than an unknown status", async () => {
+    const error = new UnraidApiError("PERMISSION_DENIED", "VARS permission denied.");
+    const { client } = await connect(config(), async () => { throw error; });
+
+    const result = await client.callTool({ name: "unraid_get_mover_status" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toEqual([{ type: "text", text: error.message }]);
   });
 
   it("registers standard mutations without destructive-only tools", async () => {
@@ -316,6 +376,63 @@ describe("createServer", () => {
       expect.objectContaining({ text: expect.stringContaining("requires Unraid API v4.37.1") }),
     );
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  describe("legacy disk removal", () => {
+    const name = "unraid_v4371_remove_disk_from_array";
+    const input = { id: "Disk:test", slot: 1 };
+    const confirmed = { name, arguments: { input, confirmation: name } };
+    const enabled = config({ allowMutations: true, allowDestructiveMutations: true });
+
+    it("advertises the supported range and rechecks the version after an API upgrade", async () => {
+      let version = "v4.37.3+build";
+      const resultData = { array: { removeDiskFromArray: { state: "STOPPED" } } };
+      const execute = vi.fn(async (query: string) => {
+        if (query === API_CAPABILITIES_QUERY) return { services: [{ name: "unraid-api", version }] };
+        if (query.includes("removeDiskFromArray")) return resultData;
+        throw new Error("Unexpected query");
+      });
+      const { client } = await connect(enabled, execute);
+      const tool = (await client.listTools()).tools.find((candidate) => candidate.name === name);
+      expect(tool?.description).toContain("v4.37.1 through v4.37.3");
+
+      const unconfirmed = await client.callTool({ name, arguments: { input } });
+      expect(unconfirmed.isError).toBe(true);
+      expect(execute).not.toHaveBeenCalled();
+      expect((await client.callTool(confirmed)).structuredContent).toEqual(resultData);
+
+      version = "4.37.4";
+      const blocked = await client.callTool(confirmed);
+      expect(blocked.isError).toBe(true);
+      expect(blocked.content).toEqual([{
+        type: "text",
+        text: expect.stringContaining("the server reports v4.37.4"),
+      }]);
+      expect(execute.mock.calls.map(([query]) => query === API_CAPABILITIES_QUERY)).toEqual([
+        true, false, true,
+      ]);
+    });
+
+    it.each(["4.37.0", "4.37.3-rc.1", "4.37.4-rc.1", "4.37.12", "unknown"])(
+      "does not send the mutation on API %s",
+      async (version) => {
+        const execute = vi.fn(async (query: string) => {
+          if (version === "unknown") return {};
+          if (query === API_CAPABILITIES_QUERY) return { services: [{ name: "unraid-api", version }] };
+          throw new Error("Unexpected query");
+        });
+        const { client } = await connect(enabled, execute);
+
+        const blocked = await client.callTool(confirmed);
+
+        expect(blocked.isError).toBe(true);
+        expect(blocked.content).toEqual([{
+          type: "text",
+          text: expect.stringContaining("requires Unraid API v4.37.1 through v4.37.3"),
+        }]);
+        expect(execute.mock.calls.some(([query]) => query.includes("removeDiskFromArray"))).toBe(false);
+      },
+    );
   });
 
   it("requires both gates and an exact confirmation for dangerous latest mutations", async () => {

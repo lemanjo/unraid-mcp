@@ -194,6 +194,12 @@ export const SHARES_QUERY = /* GraphQL */ `
   }
 `;
 
+export const MOVER_STATUS_QUERY = /* GraphQL */ `
+  query McpMoverStatus {
+    vars { shareMoverActive }
+  }
+`;
+
 export const DOCKER_CONTAINERS_QUERY = /* GraphQL */ `
   query McpDockerContainers {
     docker {

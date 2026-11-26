@@ -27,6 +27,7 @@ export interface UnraidApiOperation {
   readonly annotations: CompleteToolAnnotations;
   readonly requiresConfirmation: boolean;
   readonly minApiVersion: typeof UNRAID_API_CATALOG_VERSION;
+  readonly maxApiVersion?: string;
   readonly description: string;
 }
 
@@ -360,6 +361,7 @@ function mutation(
   safety: UnraidSafetyClass,
   annotations: MutationToolAnnotations,
   description: string,
+  maxApiVersion?: string,
 ): UnraidApiOperation {
   // Safety controls server-side gates and confirmation; annotations independently describe effects.
   return defineOperation({
@@ -372,6 +374,7 @@ function mutation(
     annotations,
     requiresConfirmation: safety !== "routine",
     description,
+    ...(maxApiVersion === undefined ? {} : { maxApiVersion }),
   });
 }
 
@@ -1276,6 +1279,7 @@ const mutationOperations: UnraidApiOperation[] = [
     "destructive",
     DESTRUCTIVE_MUTATION_TOOL_ANNOTATIONS,
     "Remove a disk assignment while the array is stopped.",
+    "4.37.3",
   ),
   mutation(
     "UnraidV4371MountArrayDisk",

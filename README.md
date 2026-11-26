@@ -13,7 +13,7 @@ The MCP is read-only by default. Mutating tools are omitted entirely until expli
 - Unraid 7.2 or later, where the API is built into the OS
 - An Unraid API key
 
-The API version bundled with an Unraid OS release can be older than the latest separately released API. Unraid 7.0-7.1 can expose API v4 through the Unraid Connect plugin, but Unraid documents that combination as limited support. The stable monitoring tools use version-aware fixed-document fallbacks for older API v4 releases. The complete extended tool catalog targets API v4.37.1 and rejects calls clearly when the server cannot confirm that version.
+The API version bundled with an Unraid OS release can be older than the latest separately released API. Unraid 7.0-7.1 can expose API v4 through the Unraid Connect plugin, but Unraid documents that combination as limited support. The stable monitoring tools use fixed documents and version-aware fallbacks where needed. The extended tool catalog is based on API v4.37.1 and has been checked against API v4.37.12, bundled with Unraid OS 7.4.1.
 
 ## Unraid Setup
 
@@ -461,10 +461,10 @@ The Inspector is intentionally not a project dependency; invoke the version appr
 
 The GraphQL tool surface has two layers:
 
-- Twelve stable tools preserve concise names and select fixed compatibility documents according to the discovered API version.
+- Thirteen stable read tools use concise names and select fixed compatibility documents where needed.
 - The complete v4.37.1 catalog uses `unraid_v4371_*` names. It covers all 58 root query fields through 61 fixed query documents, all 84 effective mutation fields through 86 fixed mutation documents, and all 17 subscriptions. Array state and parity correction use separate documents so safer branches do not inherit destructive permissions.
 
-The MCP does not accept arbitrary GraphQL. Extended tools are generated from a reviewed in-repository catalog with a separate strict Zod input schema for every document. Their calls first require a confirmed API v4.37.1 or newer; listing a latest tool does not imply an older connected server supports it.
+The MCP does not accept arbitrary GraphQL. Extended tools are generated from a reviewed in-repository catalog with a separate strict Zod input schema for every document. Their calls first check the reported API version. Most require v4.37.1 or newer. `unraid_v4371_remove_disk_from_array` is only supported on stable API v4.37.1–v4.37.3 and rechecks the version before sending the mutation. Tool listings reflect the configured gates; compatibility is checked at call time.
 
 Mapped-file tools form a separate, optional surface and are omitted unless `MCP_FILE_ROOTS` is configured.
 
@@ -477,6 +477,7 @@ The following stable read tools are always registered:
 | `unraid_get_array` | Array, capacity, disks, and current parity state |
 | `unraid_list_disks` | Physical and assignable disks, SMART summary, and partitions |
 | `unraid_list_shares` | Share capacity and allocation metadata |
+| `unraid_get_mover_status` | Whether Mover is active (`vars.shareMoverActive`: `true`, `false`, or `null` when unreported); requires `VARS:READ_ANY` |
 | `unraid_list_docker_containers` | Container state, images, ports, and conflicts |
 | `unraid_get_docker_logs` | Bounded, cursor-based container logs |
 | `unraid_list_vms` | VM names and lifecycle states |
@@ -484,6 +485,8 @@ The following stable read tools are always registered:
 | `unraid_list_notifications` | Unread/archive lists, counts, warnings, and alerts |
 | `unraid_list_system_logs` | Available system log files |
 | `unraid_read_system_log` | Bounded system log content |
+
+When API v4.37.8 or later returns `docker: null` or `vms: null` without GraphQL errors, the tools preserve that value to indicate an unavailable result. An empty inventory is a list such as `containers: []` or `domains: []`. Authorization failures remain errors.
 
 `UNRAID_ALLOW_MUTATIONS=true` adds:
 
@@ -557,6 +560,7 @@ The current official schema does not provide every WebGUI action. In particular:
 - Host shutdown/reboot mutations are not published.
 - Full SMART reports and SMART self-test controls are not published.
 - Parity mutation response types are marked work-in-progress by Unraid.
+- Mover progress and controls in the Unraid 7.4 WebGUI are not published in GraphQL. The Mover tool reports only active status.
 
 The v4.37.1 schema also contains secret-bearing and provider-defined JSON fields. Read tools use explicit safe projections rather than returning stored API keys, Connect keys, OIDC client secrets, activation data, CSRF/LUKS values, embedded images, or Tailscale authentication URLs. The explicitly confirmed API-key creation mutation returns its newly generated key because that one-time value is required to use the feature. Five inputs remain JSON because the official schema itself defines no narrower type; those operations are sensitive-gated.
 
@@ -573,6 +577,8 @@ pnpm verify
 ```
 
 Tests use local mock HTTP and WebSocket servers plus in-memory and Streamable HTTP MCP clients. They do not require Docker or a live Unraid server.
+
+To validate the catalog against tagged upstream schemas from GitHub, run `UNRAID_TEST_UPSTREAM_SCHEMAS=1 pnpm test test/upstream-schema.test.ts`.
 
 ### Container releases
 

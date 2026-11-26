@@ -2,7 +2,6 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 
 import {
-  UNRAID_API_CATALOG_VERSION,
   UNRAID_API_V4_37_1_OPERATIONS,
   UNRAID_API_V4_37_1_SUBSCRIPTIONS,
   type UnraidApiOperation,
@@ -11,6 +10,7 @@ import type { UnraidConfig } from "./config.js";
 import { logToStderr } from "./logger.js";
 import {
   isApiVersionAtLeast,
+  isApiVersionInReleaseRange,
   type GraphQLExecutor,
   type UnraidReadFacade,
 } from "./read-facade.js";
@@ -73,19 +73,29 @@ async function runTool(operation: () => Promise<Record<string, unknown>>) {
 
 async function requireCatalogVersion(
   facade: UnraidReadFacade,
+  { minApiVersion, maxApiVersion }: Pick<UnraidApiOperation, "minApiVersion" | "maxApiVersion">,
   signal?: AbortSignal,
 ): Promise<void> {
-  const { apiVersion } = await facade.getCapabilities(signal);
-  if (isApiVersionAtLeast(apiVersion, UNRAID_API_CATALOG_VERSION)) return;
+  // A cached version could predate an upgrade that removed this operation.
+  const apiVersion = maxApiVersion
+    ? await facade.probeApiVersion(signal)
+    : (await facade.getCapabilities(signal)).apiVersion;
+  const supported = maxApiVersion
+    ? isApiVersionInReleaseRange(apiVersion, minApiVersion, maxApiVersion)
+    : isApiVersionAtLeast(apiVersion, minApiVersion);
+  if (supported) return;
   const reported =
     apiVersion === "unknown"
       ? "an unknown version"
       : apiVersion.startsWith("v")
         ? apiVersion
         : `v${apiVersion}`;
+  const required = maxApiVersion
+    ? `v${minApiVersion} through v${maxApiVersion} (stable releases only)`
+    : `v${minApiVersion} or newer`;
   throw new UnraidApiError(
     "UNSUPPORTED_API_VERSION",
-    `This tool requires Unraid API v${UNRAID_API_CATALOG_VERSION} or newer; the server reports ${reported}.`,
+    `This tool requires Unraid API ${required}; the server reports ${reported}.`,
   );
 }
 
@@ -108,9 +118,14 @@ export function registerApiV4Tools(
             .describe(`Required acknowledgement: set exactly to ${name}`),
         })
       : baseSchema;
-    const description = confirmationRequired
-      ? `${operation.description} Requires explicit confirmation with the exact tool name.`
-      : operation.description;
+    const description = [
+      operation.description,
+      operation.maxApiVersion &&
+        `Available only on stable Unraid API v${operation.minApiVersion} through v${operation.maxApiVersion}.`,
+      confirmationRequired && "Requires explicit confirmation with the exact tool name.",
+    ]
+      .filter(Boolean)
+      .join(" ");
 
     server.registerTool(
       name,
@@ -121,6 +136,7 @@ export function registerApiV4Tools(
         annotations: operation.annotations,
         _meta: {
           unraidApiVersion: operation.minApiVersion,
+          ...(operation.maxApiVersion && { unraidApiMaxVersion: operation.maxApiVersion }),
           unraidSchemaPath: operation.schemaPath,
           unraidSafetyClass: operation.safety,
         },
@@ -128,7 +144,7 @@ export function registerApiV4Tools(
       (input, context) => {
         const { confirmation: _confirmation, ...variables } = input as Record<string, unknown>;
         return runTool(async () => {
-          await requireCatalogVersion(facade, context.mcpReq.signal);
+          await requireCatalogVersion(facade, operation, context.mcpReq.signal);
           try {
             return await executor.execute(operation.document, variables, context.mcpReq.signal);
           } catch (error) {
@@ -174,7 +190,7 @@ export function registerApiV4Tools(
       },
       (variables, context) =>
         runTool(async () => {
-          await requireCatalogVersion(facade, context.mcpReq.signal);
+          await requireCatalogVersion(facade, subscription, context.mcpReq.signal);
           if (!executor.subscribeOnce) {
             throw new UnraidApiError(
               "SUBSCRIPTIONS_UNAVAILABLE",

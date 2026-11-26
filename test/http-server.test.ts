@@ -230,7 +230,7 @@ describe("HTTP transport", () => {
     const result = await client.callTool({ name: "unraid_get_system_info" });
 
     expect(tools.tools).toHaveLength(
-      12 +
+      13 +
         UNRAID_API_V4_37_1_OPERATIONS.filter(
           (operation) => operation.kind === "query" && !operation.requiresConfirmation,
         ).length +

@@ -6,6 +6,7 @@ import {
   DOCKER_CONTAINERS_QUERY,
   DOCKER_LOGS_QUERY,
   METRICS_QUERY,
+  MOVER_STATUS_QUERY,
   NETWORK_METRICS_QUERY,
   NOTIFICATIONS_QUERY,
   SHARES_QUERY,
@@ -50,11 +51,13 @@ export interface UnraidApiCapabilities {
 
 export interface UnraidReadFacade {
   getCapabilities(signal?: AbortSignal): Promise<UnraidApiCapabilities>;
+  probeApiVersion(signal?: AbortSignal): Promise<string>;
   getSystemInfo(signal?: AbortSignal): Promise<Record<string, unknown>>;
   getMetrics(signal?: AbortSignal): Promise<Record<string, unknown>>;
   getArray(signal?: AbortSignal): Promise<Record<string, unknown>>;
   listDisks(signal?: AbortSignal): Promise<Record<string, unknown>>;
   listShares(signal?: AbortSignal): Promise<Record<string, unknown>>;
+  getMoverStatus(signal?: AbortSignal): Promise<Record<string, unknown>>;
   listDockerContainers(signal?: AbortSignal): Promise<Record<string, unknown>>;
   getDockerLogs(
     variables: Record<string, unknown>,
@@ -174,6 +177,20 @@ export function isApiVersionAtLeast(value: string, minimum: string): boolean {
   const version = parseSemanticVersion(value);
   const required = parseSemanticVersion(minimum);
   return version !== undefined && required !== undefined && isAtLeast(version, required);
+}
+
+export function isApiVersionInReleaseRange(value: string, minimum: string, maximum: string): boolean {
+  const version = parseSemanticVersion(value);
+  const lower = parseSemanticVersion(minimum);
+  const upper = parseSemanticVersion(maximum);
+  return (
+    version !== undefined &&
+    version.prerelease === undefined &&
+    lower !== undefined &&
+    upper !== undefined &&
+    isAtLeast(version, lower) &&
+    isAtLeast(upper, version)
+  );
 }
 
 function requiredRecord(
@@ -354,6 +371,18 @@ export class VersionAwareUnraidReadFacade implements UnraidReadFacade {
     return this.executeFixed(SHARES_QUERY, {}, signal);
   }
 
+  async getMoverStatus(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const data = await this.executor.execute(MOVER_STATUS_QUERY, {}, signal);
+    const { shareMoverActive } = requiredRecord(data, "vars");
+    if (shareMoverActive !== null && typeof shareMoverActive !== "boolean") {
+      throw new UnraidApiError(
+        "INVALID_RESPONSE",
+        "The Unraid API response did not contain a valid vars.shareMoverActive field.",
+      );
+    }
+    return { vars: { shareMoverActive } };
+  }
+
   listDockerContainers(signal?: AbortSignal): Promise<Record<string, unknown>> {
     return this.executeFixed(DOCKER_CONTAINERS_QUERY, {}, signal);
   }
@@ -430,7 +459,7 @@ export class VersionAwareUnraidReadFacade implements UnraidReadFacade {
   }
 
   private async discoverCapabilities(signal?: AbortSignal): Promise<UnraidApiCapabilities> {
-    const apiVersion = await this.discoverApiVersion(signal);
+    const apiVersion = await this.probeApiVersion(signal);
     const version = apiVersion === "unknown" ? undefined : parseSemanticVersion(apiVersion);
 
     return Object.freeze({
@@ -471,7 +500,7 @@ export class VersionAwareUnraidReadFacade implements UnraidReadFacade {
     });
   }
 
-  private async discoverApiVersion(signal?: AbortSignal): Promise<string> {
+  async probeApiVersion(signal?: AbortSignal): Promise<string> {
     try {
       const data = await this.executor.execute(API_CAPABILITIES_QUERY, {}, signal);
       if (Array.isArray(data.services)) {

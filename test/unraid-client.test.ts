@@ -101,6 +101,21 @@ describe("UnraidClient", () => {
     });
   });
 
+  it("preserves GraphQL errors when a nullable inventory comes back with partial data", async () => {
+    const endpoint = await listen((_request, response) => {
+      response.end(JSON.stringify({
+        data: { docker: null, vms: { domains: [] } },
+        errors: [{ message: "Forbidden resource DOCKER", path: ["docker"] }],
+      }));
+    });
+
+    const client = new UnraidClient(config(endpoint));
+    await expect(client.execute("query Test { docker { id } vms { domains { id } } }")).rejects.toMatchObject({
+      code: "GRAPHQL_ERROR",
+      message: "Unraid GraphQL error: Forbidden resource DOCKER",
+    });
+  });
+
   it("includes redacted GraphQL diagnostics for non-2xx responses", async () => {
     const endpoint = await listen((_request, response) => {
       response.statusCode = 500;
