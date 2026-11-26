@@ -491,7 +491,7 @@ export function createServer(
 ): McpServer {
   const server = new McpServer({
     name: "unraid-mcp",
-    version: "1.1.0",
+    version: "1.1.1",
   });
   const readFacade = new VersionAwareUnraidReadFacade(client);
 

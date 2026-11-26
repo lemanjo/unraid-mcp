@@ -327,7 +327,7 @@ export class UnraidClient {
           Accept: "application/json",
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(payload),
-          "User-Agent": "unraid-mcp/1.1.0",
+          "User-Agent": "unraid-mcp/1.1.1",
           "x-api-key": this.config.apiKey,
         },
       };
