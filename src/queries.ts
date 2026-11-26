@@ -206,7 +206,7 @@ export const DOCKER_CONTAINERS_QUERY = /* GraphQL */ `
       containers {
         id names image created
         ports { ip privatePort publicPort type }
-        lanIpPorts sizeRootFs sizeRw sizeLog state status
+        lanIpPorts state status
         hostConfig { networkMode }
         autoStart autoStartOrder autoStartWait isOrphaned
       }
@@ -218,6 +218,14 @@ export const DOCKER_CONTAINERS_QUERY = /* GraphQL */ `
           lanIpPort publicPort type containers { id name }
         }
       }
+    }
+  }
+`;
+
+export const DOCKER_CONTAINER_SIZES_QUERY = /* GraphQL */ `
+  query McpDockerContainerSizes {
+    docker {
+      containers { id names sizeRootFs sizeRw sizeLog }
     }
   }
 `;

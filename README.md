@@ -461,7 +461,7 @@ The Inspector is intentionally not a project dependency; invoke the version appr
 
 The GraphQL tool surface has two layers:
 
-- Thirteen stable read tools use concise names and select fixed compatibility documents where needed.
+- Fourteen stable read tools use concise names and select fixed compatibility documents where needed.
 - The complete v4.37.1 catalog uses `unraid_v4371_*` names. It covers all 58 root query fields through 61 fixed query documents, all 84 effective mutation fields through 86 fixed mutation documents, and all 17 subscriptions. Array state and parity correction use separate documents so safer branches do not inherit destructive permissions.
 
 The MCP does not accept arbitrary GraphQL. Extended tools are generated from a reviewed in-repository catalog with a separate strict Zod input schema for every document. Their calls first check the reported API version. Most require v4.37.1 or newer. `unraid_v4371_remove_disk_from_array` is only supported on stable API v4.37.1–v4.37.3 and rechecks the version before sending the mutation. Tool listings reflect the configured gates; compatibility is checked at call time.
@@ -479,12 +479,15 @@ The following stable read tools are always registered:
 | `unraid_list_shares` | Share capacity and allocation metadata |
 | `unraid_get_mover_status` | Whether Mover is active (`vars.shareMoverActive`: `true`, `false`, or `null` when unreported); requires `VARS:READ_ANY` |
 | `unraid_list_docker_containers` | Container state, images, ports, and conflicts |
+| `unraid_list_docker_container_sizes` | On-demand root filesystem, writable layer, and log sizes for all containers |
 | `unraid_get_docker_logs` | Bounded, cursor-based container logs |
 | `unraid_list_vms` | VM names and lifecycle states |
 | `unraid_get_ups` | UPS battery, power, status, and configuration |
 | `unraid_list_notifications` | Unread/archive lists, counts, warnings, and alerts |
 | `unraid_list_system_logs` | Available system log files |
 | `unraid_read_system_log` | Bounded system log content |
+
+`unraid_list_docker_containers` and `unraid_v4371_query_docker` no longer return `sizeRootFs`, `sizeRw`, or `sizeLog`. If you need these fields, call `unraid_list_docker_container_sizes` and match its `docker.containers` entries to the inventory by `id`. Size collection can be slow, so call it only when needed rather than during routine inventory polling.
 
 When API v4.37.8 or later returns `docker: null` or `vms: null` without GraphQL errors, the tools preserve that value to indicate an unavailable result. An empty inventory is a list such as `containers: []` or `domains: []`. Authorization failures remain errors.
 

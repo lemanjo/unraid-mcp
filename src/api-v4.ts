@@ -284,16 +284,17 @@ const NETWORK_INTERFACE_FIELDS = `
   status protocol ipAddress netmask gateway useDhcp
   ipv6Address ipv6Netmask ipv6Gateway useDhcp6
 `;
-const DOCKER_CONTAINER_SAFE_FIELDS = `
+const DOCKER_CONTAINER_INVENTORY_FIELDS = `
   id names image imageId created
   ports { ip privatePort publicPort type }
-  lanIpPorts sizeRootFs sizeRw sizeLog state status
+  lanIpPorts state status
   hostConfig { networkMode }
   autoStart autoStartOrder autoStartWait templatePath
   projectUrl registryUrl supportUrl iconUrl webUiUrl shell
   templatePorts { ip privatePort publicPort type }
   isOrphaned isUpdateAvailable isRebuildReady tailscaleEnabled
 `;
+const DOCKER_CONTAINER_SAFE_FIELDS = `${DOCKER_CONTAINER_INVENTORY_FIELDS} sizeRootFs sizeRw sizeLog`;
 const ONBOARDING_SAFE_FIELDS = `
   status isPartnerBuild completed completedAtVersion shouldOpen
   onboardingState {
@@ -734,7 +735,7 @@ const queryOperations: UnraidApiOperation[] = [
     `query UnraidV4371QueryDocker {
       docker {
         id
-        containers { ${DOCKER_CONTAINER_SAFE_FIELDS} }
+        containers { ${DOCKER_CONTAINER_INVENTORY_FIELDS} }
         networks { id name created scope driver enableIPv6 internal attachable ingress configOnly }
         portConflicts {
           containerPorts { privatePort type containers { id name } }
@@ -746,7 +747,7 @@ const queryOperations: UnraidApiOperation[] = [
     }`,
     null,
     "sensitive",
-    "Get Docker inventory, safe network metadata, port conflicts, organization, and update status.",
+    "Get Docker inventory, safe network metadata, port conflicts, organization, and update status. Use unraid_list_docker_container_sizes for storage sizes.",
   ),
   query(
     "UnraidV4371QueryDisks",

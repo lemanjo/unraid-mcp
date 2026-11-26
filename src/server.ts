@@ -132,11 +132,23 @@ function registerReadTools(server: McpServer, client: UnraidReadFacade): void {
     {
       title: "List Unraid Docker containers",
       description:
-        "List Docker container state, image, ports, autostart, resource sizes, and port conflicts. A null docker result means the inventory is unavailable.",
+        "List Docker container state, image, ports, autostart, and port conflicts. Use unraid_list_docker_container_sizes for storage sizes. A null docker result means the inventory is unavailable.",
       inputSchema: emptyInputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     (_input, context) => runTool(() => client.listDockerContainers(context.mcpReq.signal)),
+  );
+
+  server.registerTool(
+    "unraid_list_docker_container_sizes",
+    {
+      title: "List Unraid Docker container storage sizes",
+      description:
+        "List container IDs, names, and root filesystem, writable layer, and log sizes. This can be slow; use it only when you need sizes. A null docker result means the inventory is unavailable.",
+      inputSchema: emptyInputSchema,
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    },
+    (_input, context) => runTool(() => client.listDockerContainerSizes(context.mcpReq.signal)),
   );
 
   server.registerTool(

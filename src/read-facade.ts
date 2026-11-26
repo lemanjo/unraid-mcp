@@ -3,6 +3,7 @@ import {
   ARRAY_QUERY,
   DISK_SECTOR_SIZES_QUERY,
   DISKS_QUERY,
+  DOCKER_CONTAINER_SIZES_QUERY,
   DOCKER_CONTAINERS_QUERY,
   DOCKER_LOGS_QUERY,
   METRICS_QUERY,
@@ -59,6 +60,7 @@ export interface UnraidReadFacade {
   listShares(signal?: AbortSignal): Promise<Record<string, unknown>>;
   getMoverStatus(signal?: AbortSignal): Promise<Record<string, unknown>>;
   listDockerContainers(signal?: AbortSignal): Promise<Record<string, unknown>>;
+  listDockerContainerSizes(signal?: AbortSignal): Promise<Record<string, unknown>>;
   getDockerLogs(
     variables: Record<string, unknown>,
     signal?: AbortSignal,
@@ -385,6 +387,10 @@ export class VersionAwareUnraidReadFacade implements UnraidReadFacade {
 
   listDockerContainers(signal?: AbortSignal): Promise<Record<string, unknown>> {
     return this.executeFixed(DOCKER_CONTAINERS_QUERY, {}, signal);
+  }
+
+  listDockerContainerSizes(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.executeFixed(DOCKER_CONTAINER_SIZES_QUERY, {}, signal);
   }
 
   getDockerLogs(

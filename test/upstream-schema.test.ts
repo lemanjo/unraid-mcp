@@ -2,7 +2,13 @@ import { buildSchema, isNonNullType, parse, validate } from "graphql";
 import { describe, expect, it } from "vitest";
 
 import { UNRAID_API_V4_37_1_OPERATIONS, UNRAID_API_V4_37_1_SUBSCRIPTIONS } from "../src/api-v4.js";
-import { DOCKER_CONTAINERS_QUERY, DOCKER_LOGS_QUERY, MOVER_STATUS_QUERY, VMS_QUERY } from "../src/queries.js";
+import {
+  DOCKER_CONTAINER_SIZES_QUERY,
+  DOCKER_CONTAINERS_QUERY,
+  DOCKER_LOGS_QUERY,
+  MOVER_STATUS_QUERY,
+  VMS_QUERY,
+} from "../src/queries.js";
 
 // Opt in to network access; the default test suite runs offline.
 describe.runIf(process.env.UNRAID_TEST_UPSTREAM_SCHEMAS === "1")("tagged Unraid schemas", () => {
@@ -32,7 +38,9 @@ describe.runIf(process.env.UNRAID_TEST_UPSTREAM_SCHEMAS === "1")("tagged Unraid 
     for (const name of ["docker", "vms"]) {
       expect(isNonNullType(fields[name]!.type), name).toBe(!nullableInventories);
     }
-    for (const document of [MOVER_STATUS_QUERY, DOCKER_CONTAINERS_QUERY, DOCKER_LOGS_QUERY, VMS_QUERY]) {
+    for (const document of [
+      MOVER_STATUS_QUERY, DOCKER_CONTAINERS_QUERY, DOCKER_CONTAINER_SIZES_QUERY, DOCKER_LOGS_QUERY, VMS_QUERY,
+    ]) {
       expect(validate(schema, parse(document)), document).toEqual([]);
     }
   }, 15_000);

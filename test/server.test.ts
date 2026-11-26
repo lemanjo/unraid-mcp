@@ -1,4 +1,5 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import { parse, visit } from "graphql";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import {
 } from "../src/api-v4.js";
 import type { UnraidConfig } from "../src/config.js";
 import {
+  DOCKER_CONTAINER_SIZES_QUERY,
   DOCKER_CONTAINERS_QUERY,
   DOCKER_LOGS_QUERY,
   MOVER_STATUS_QUERY,
@@ -24,6 +26,16 @@ import { UnraidApiError } from "../src/unraid-client.js";
 
 const closeCallbacks: (() => Promise<void>)[] = [];
 const temporaryDirectories: string[] = [];
+
+function graphqlFieldNames(document: string): string[] {
+  const fields: string[] = [];
+  visit(parse(document), {
+    Field(node) {
+      fields.push(node.name.value);
+    },
+  });
+  return fields;
+}
 
 function mappedRoot(name = "appdata") {
   const path = mkdtempSync(join(tmpdir(), "unraid-mcp-server-files-"));
@@ -97,11 +109,12 @@ describe("createServer", () => {
       (operation) => operation.kind === "query" && !operation.requiresConfirmation,
     );
     expect(names).toHaveLength(
-      13 + latestReads.length + UNRAID_API_V4_37_1_SUBSCRIPTIONS.length,
+      14 + latestReads.length + UNRAID_API_V4_37_1_SUBSCRIPTIONS.length,
     );
     expect(names).toContain("unraid_get_system_info");
     expect(names).toContain("unraid_read_system_log");
     expect(names).toContain("unraid_get_mover_status");
+    expect(names).toContain("unraid_list_docker_container_sizes");
     expect(names).not.toContain("unraid_control_array");
     expect(names).not.toContain("unraid_remove_docker_container");
   });
@@ -130,7 +143,7 @@ describe("createServer", () => {
     ] as const;
 
     expect(tools).toHaveLength(
-      20 +
+      21 +
         UNRAID_API_V4_37_1_OPERATIONS.length +
         UNRAID_API_V4_37_1_SUBSCRIPTIONS.length +
         4,
@@ -194,6 +207,54 @@ describe("createServer", () => {
     });
   });
 
+  it.each([
+    "unraid_list_docker_containers",
+    "unraid_v4371_query_docker",
+  ])("fetches inventory without storage sizes in %s", async (name) => {
+    const inventory = { docker: { containers: [{ id: "DockerContainer:abc", state: "running" }] } };
+    const execute = vi.fn(async (query: string) =>
+      query === API_CAPABILITIES_QUERY
+        ? { services: [{ name: "unraid-api", version: "4.37.12" }] }
+        : inventory,
+    );
+    const { client } = await connect(config(), execute);
+
+    const result = await client.callTool({ name });
+
+    expect(result.structuredContent).toEqual(inventory);
+    const queries = execute.mock.calls.flatMap(([query]) => query === API_CAPABILITIES_QUERY ? [] : [query]);
+    expect(queries).toHaveLength(1);
+    const fields = graphqlFieldNames(queries[0]!);
+    expect(fields).toEqual(expect.arrayContaining([
+      "docker", "containers", "id", "names", "image", "state", "ports", "autoStart", "portConflicts",
+    ]));
+    expect(fields.filter((field) => ["sizeRootFs", "sizeRw", "sizeLog"].includes(field))).toEqual([]);
+  });
+
+  it("fetches only container identity and storage sizes on request", async () => {
+    const sizes = {
+      docker: {
+        containers: [
+          { id: "DockerContainer:abc", names: ["/app"], sizeRootFs: 2048, sizeRw: 0, sizeLog: null },
+        ],
+      },
+    };
+    const execute = vi.fn(async (query: string) =>
+      query === API_CAPABILITIES_QUERY
+        ? { services: [{ name: "unraid-api", version: "4.37.12" }] }
+        : sizes,
+    );
+    const { client } = await connect(config(), execute);
+
+    const result = await client.callTool({ name: "unraid_list_docker_container_sizes" });
+
+    expect(result.structuredContent).toEqual(sizes);
+    expect(execute).toHaveBeenLastCalledWith(DOCKER_CONTAINER_SIZES_QUERY, {}, expect.any(AbortSignal));
+    expect(graphqlFieldNames(execute.mock.lastCall![0]).sort()).toEqual([
+      "containers", "docker", "id", "names", "sizeLog", "sizeRootFs", "sizeRw",
+    ]);
+  });
+
   it("applies bounded defaults to Docker log requests", async () => {
     const execute = vi.fn(async (query: string) =>
       query === API_CAPABILITIES_QUERY
@@ -216,6 +277,7 @@ describe("createServer", () => {
 
   it.each([
     ["unraid_list_docker_containers", DOCKER_CONTAINERS_QUERY, "docker", "containers"],
+    ["unraid_list_docker_container_sizes", DOCKER_CONTAINER_SIZES_QUERY, "docker", "containers"],
     ["unraid_list_vms", VMS_QUERY, "vms", "domains"],
   ])("distinguishes an unavailable inventory, an empty list, and access denial in %s", async (
     name, document, root, field,
