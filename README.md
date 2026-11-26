@@ -80,7 +80,7 @@ node /absolute/path/to/unraid-mcp/dist/index.js
 Versioned release images are published to [Docker Hub](https://hub.docker.com/r/lemanjo/unraid-mcp) for `linux/amd64` and `linux/arm64`. Pin a version or image digest for deployments rather than relying on the mutable `latest` tag:
 
 ```bash
-docker pull lemanjo/unraid-mcp:1.0.1
+docker pull lemanjo/unraid-mcp:1.1.0
 ```
 
 Every direct push or merged pull request to `main` publishes an unreleased development image as `lemanjo/unraid-mcp:nightly` after the container smoke test and vulnerability scan pass. The same image also receives an immutable `sha-<full-commit-sha>` tag. Pull requests are built and scanned but are not published before merge. Use a versioned release for production; the `nightly` tag moves whenever `main` is updated.
@@ -90,7 +90,7 @@ The final image uses a digest-pinned Distroless Node.js runtime. It runs without
 Build the production image on your Unraid server or another Docker host:
 
 ```bash
-docker build --tag unraid-mcp:1.0.1 .
+docker build --tag unraid-mcp:1.1.0 .
 ```
 
 ### Local stdio container
@@ -104,7 +104,7 @@ export UNRAID_API_KEY="your-api-key"
 docker run --rm -i \
   --env UNRAID_URL \
   --env UNRAID_API_KEY \
-  unraid-mcp:1.0.1
+  unraid-mcp:1.1.0
 ```
 
 Forward any optional configuration the same way, for example `--env UNRAID_ALLOW_MUTATIONS`. For a custom CA file, mount it read-only and configure its container path:
@@ -115,7 +115,7 @@ docker run --rm -i \
   --env UNRAID_API_KEY \
   --env UNRAID_CA_CERT_PATH=/certs/unraid-ca.pem \
   --volume /host/path/unraid-ca.pem:/certs/unraid-ca.pem:ro \
-  unraid-mcp:1.0.1
+  unraid-mcp:1.1.0
 ```
 
 In stdio mode the image does not listen on a port. The AI host launches it with `docker run --rm -i` and owns its lifetime.
@@ -132,7 +132,7 @@ docker run --rm -i \
   --env UNRAID_API_KEY \
   --env MCP_FILE_ROOTS \
   --mount type=bind,src=/mnt/user/appdata/plex,dst=/mnt/appdata/plex,readonly \
-  lemanjo/unraid-mcp:1.0.1
+  lemanjo/unraid-mcp:1.1.0
 ```
 
 This registers root discovery, non-recursive directory listing, and bounded text-file reading tools. The model sees only the `plex` alias and relative paths, never the host or container root path. Absolute paths, traversal, symbolic links, special files, invalid UTF-8, and files over `MCP_MAX_FILE_BYTES` are rejected.
@@ -152,7 +152,7 @@ docker run --rm -i \
   --env MCP_ALLOW_FILE_WRITES \
   --env MCP_WRITABLE_FILE_ROOTS \
   --mount type=bind,src=/mnt/user/appdata/plex,dst=/mnt/appdata/plex \
-  lemanjo/unraid-mcp:1.0.1
+  lemanjo/unraid-mcp:1.1.0
 ```
 
 The default image user is numeric UID/GID `65532:65532`; `PUID` and `PGID` variables do not change it. Use `--user`, `--group-add`, or host ACLs to grant only the required access. Do not use `--privileged` or root as a permissions workaround.
@@ -186,7 +186,7 @@ docker run -d \
   --env MCP_AUTH_TOKEN \
   --env UNRAID_URL \
   --env UNRAID_API_KEY \
-  lemanjo/unraid-mcp:1.0.1
+  lemanjo/unraid-mcp:1.1.0
 ```
 
 `MCP_ALLOWED_HOSTS` is mandatory when binding an IPv4 or IPv6 wildcard address. List every hostname or IP address clients or a reverse proxy will place in the HTTP `Host` header. Entries do not include ports, and IPv6 entries use brackets. Localhost values are always included for health checks.
@@ -222,7 +222,7 @@ An OpenCode configuration that launches the image through a Docker daemon is:
         "UNRAID_URL",
         "--env",
         "UNRAID_API_KEY",
-        "unraid-mcp:1.0.1"
+        "unraid-mcp:1.1.0"
       ],
       "enabled": true,
       "environment": {
@@ -354,7 +354,7 @@ To launch the container image instead, use:
         "UNRAID_URL",
         "--env",
         "UNRAID_API_KEY",
-        "unraid-mcp:1.0.1"
+        "unraid-mcp:1.1.0"
       ],
       "env": {
         "UNRAID_URL": "${UNRAID_URL}",
@@ -414,7 +414,7 @@ args = [
   "UNRAID_URL",
   "--env",
   "UNRAID_API_KEY",
-  "unraid-mcp:1.0.1",
+  "unraid-mcp:1.1.0",
 ]
 env_vars = ["UNRAID_URL", "UNRAID_API_KEY"]
 startup_timeout_sec = 10

@@ -16,7 +16,7 @@ COPY src ./src
 RUN pnpm build \
     && pnpm prune --prod
 
-FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:939d6f1671529d230f50b563578e9b5d206af58f038b10ebd7e1233023d4e167 AS runtime
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:c73ddeb03e1dc2d579aa111c83d6699c6b8b487e35c0c631d4a3a20229fc25ee AS runtime
 
 LABEL org.opencontainers.image.title="Unraid MCP" \
       org.opencontainers.image.description="Model Context Protocol server for the official Unraid GraphQL API" \
